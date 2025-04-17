@@ -13,7 +13,22 @@
       "addedAt": "2025-04-17T15:00:12.193Z"
     }
   ],
-  "agendaHistory": [],
-  "nextAgendaId": 4,
-  "nextSuggestionId": 5
+  "agendaHistory": [
+    {
+      "items": [
+        {
+          "id": 4,
+          "text": "oi tudo bem",
+          "suggestedBy": "kirihkaro",
+          "userId": "332348833587658753",
+          "approvedAt": "2025-04-17T17:16:48.282Z",
+          "suggestionId": 5
+        }
+      ],
+      "archivedAt": "2025-04-17T17:18:10.125Z",
+      "weekNumber": 16
+    }
+  ],
+  "nextAgendaId": 5,
+  "nextSuggestionId": 6
 }
