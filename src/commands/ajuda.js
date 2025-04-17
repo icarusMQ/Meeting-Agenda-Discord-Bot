@@ -1,6 +1,7 @@
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 const { handleAsync } = require('../utils/errorHandler');
 const logger = require('../utils/logger');
+const { getSetting, getDayName } = require('../utils/settings');
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -8,6 +9,13 @@ module.exports = {
     .setDescription('Exibe informações de ajuda sobre o bot e seus comandos'),
   
   execute: handleAsync(async (interaction) => {
+    // Obter informações do reset atual para exibir no rodapé
+    const resetDay = getSetting('resetDay', 0);
+    const resetHour = getSetting('resetHour', 0);
+    const resetMinute = getSetting('resetMinute', 0);
+    const dayName = getDayName(resetDay);
+    const formattedTime = `${resetHour.toString().padStart(2, '0')}:${resetMinute.toString().padStart(2, '0')}`;
+    
     const embed = new EmbedBuilder()
       .setColor(0x4286f4)
       .setTitle('📋 Ajuda - Bot de Pautas')
@@ -31,12 +39,20 @@ module.exports = {
           value: 
           '`/autorizar` - Autorizar um usuário a aprovar sugestões\n' +
           '`/desautorizar` - Remover autorização de um usuário\n' +
-          '`/resetar` - Resetar a pauta atual (salva no histórico)\n' +
-          '`/historico limpar` - Limpar o histórico de pautas'
+          '`/resetar` - Resetar a pauta atual manualmente (salva no histórico)\n' +
+          '`/historico limpar` - Limpar o histórico de pautas\n' + 
+          '`/configreset` - Configurar o dia e hora do reset automático'
+        },
+        {
+          name: '⚙️ Configurações de Reset',
+          value:
+          '`/configreset status` - Ver a configuração atual do reset\n' +
+          '`/configreset dia` - Alterar o dia do reset automático\n' +
+          '`/configreset hora` - Alterar o horário do reset automático'
         }
       )
       .setFooter({ 
-        text: 'A pauta é automaticamente resetada todo domingo à meia-noite' 
+        text: `A pauta é automaticamente resetada toda ${dayName.pt} às ${formattedTime}` 
       });
     
     await interaction.reply({
