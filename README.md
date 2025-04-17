@@ -286,9 +286,3 @@ O workflow `.github/workflows/ci.yml` faz:
 
 ---
 
-### 📝 Licença
-
-Este projeto está licenciado sob a MIT License. Veja o arquivo [LICENSE](LICENSE) para mais detalhes.
-
----
-
