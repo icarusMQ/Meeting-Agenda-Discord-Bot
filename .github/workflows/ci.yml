@@ -1,0 +1,59 @@
+# GitHub Actions CI workflow for Discord Bot
+# Triggers on push or pull requests to the main branch
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      # 1. Checkout the repository
+      - uses: actions/checkout@v3
+
+      # 2. Setup Node.js environment
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+
+      # 3. Install dependencies
+      - name: Install dependencies
+        run: npm ci
+
+      # 4. Lint (if you have ESLint configured)
+      - name: Run linter
+        if: success()
+        run: |
+          if [ -f .eslintrc.js ] || [ -f .eslintrc.json ]; then
+            npm run lint;
+          else
+            echo "No ESLint config found, skipping lint step.";
+          fi
+
+      # 5. Run tests (if you have test scripts)
+      - name: Run tests
+        if: success()
+        run: |
+          if npm run | grep -q "test"; then
+            npm test;
+          else
+            echo "No test script found, skipping tests.";
+          fi
+
+      # 6. Build Docker image
+      - name: Build Docker image
+        run: |
+          docker build . --file Dockerfile --tag discord-bot:${{ github.sha }}
+
+      # 7. (Optional) Push Docker image to registry
+      # - name: Login to Docker Hub
+      #   run: echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USERNAME" --password-stdin
+      # - name: Push Docker image
+      #   run: |
+      #     docker tag discord-bot:${{ github.sha }} $DOCKER_USERNAME/discord-bot:latest
+      #     docker push $DOCKER_USERNAME/discord-bot:latest
