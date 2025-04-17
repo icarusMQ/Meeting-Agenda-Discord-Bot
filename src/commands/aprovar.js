@@ -1,5 +1,7 @@
 const { SlashCommandBuilder, PermissionFlagsBits, ActionRowBuilder, StringSelectMenuBuilder, ComponentType } = require('discord.js');
 const { approveSuggestion, getSuggestions, isUserAuthorized } = require('../utils/agenda');
+const logger = require('../utils/logger');
+const { handleAsync } = require('../utils/errorHandler');
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -7,7 +9,7 @@ module.exports = {
     .setDescription('Abre um menu dropdown para aprovar sugestões de pauta')
     .setDefaultMemberPermissions('0'), // Default to no one can use, we'll override with roles
   
-  async execute(interaction) {
+  execute: handleAsync(async (interaction) => {
     // Check if the user has the leader role, is an administrator, or is in the authorized users list
     const isLeader = interaction.member.roles.cache.has(process.env.LEADER_ROLE_ID) || 
                     interaction.member.permissions.has(PermissionFlagsBits.Administrator);
@@ -15,6 +17,7 @@ module.exports = {
     const isAuthorized = isLeader || hasAuthorizedRole || isUserAuthorized(interaction.user.id);
     
     if (!isAuthorized) {
+      logger.info(`Usuário sem permissão tentou aprovar sugestões: ${interaction.user.tag} (${interaction.user.id})`);
       return interaction.reply({
         content: '❌ Você não tem permissão para aprovar sugestões.',
         ephemeral: true
@@ -48,10 +51,12 @@ module.exports = {
     
     // Send the message with the select menu
     const response = await interaction.reply({
-      content: '📋 Selecione uma sugestão para aprovar:',
+      content: '📋 **Aprovar Sugestão**\n\nSelecione uma sugestão da lista abaixo para aprová-la e adicioná-la à pauta:',
       components: [row],
       ephemeral: true
     });
+    
+    logger.info(`Menu de aprovação de sugestões aberto por ${interaction.user.tag} (${interaction.user.id})`);
     
     // Create a collector for the menu interaction
     const collector = response.createMessageComponentCollector({ 
@@ -71,19 +76,23 @@ module.exports = {
       const approved = approveSuggestion(selectedId);
       
       if (approved) {
+        logger.info(`Sugestão #${selectedId} aprovada por ${interaction.user.tag} (${interaction.user.id})`);
+        
         await i.update({
-          content: `✅ Sugestão #${selectedId} aprovada e adicionada à pauta!\n📝 **${approved.text}**\n\nSugerida por: ${approved.username}`,
+          content: `✅ **Sugestão Aprovada**\n\nVocê aprovou com sucesso a sugestão #${selectedId} e ela foi adicionada à pauta!\n\n📝 **${approved.text}**\n\nSugerida por: ${approved.username}`,
           components: [],
           ephemeral: true
         });
         
         // Also send a message to the channel to notify everyone
         await interaction.channel.send({
-          content: `✅ Sugestão #${selectedId} aprovada e adicionada à pauta!\n📝 **${approved.text}**\n\nSugerida por: ${approved.username}`
+          content: `✅ **Novo Item na Pauta**\n\n${interaction.user.toString()} aprovou a sugestão: \n📝 **${approved.text}**\n\nSugerida por: ${approved.username}`
         });
       } else {
+        logger.warn(`Falha ao aprovar sugestão #${selectedId} por ${interaction.user.tag} (${interaction.user.id})`);
+        
         await i.update({
-          content: `❌ Erro ao aprovar sugestão #${selectedId}.`,
+          content: `❌ Erro ao aprovar sugestão #${selectedId}. É possível que ela já tenha sido aprovada ou removida.`,
           components: [],
           ephemeral: true
         });
@@ -99,5 +108,5 @@ module.exports = {
         });
       }
     });
-  },
+  })
 };

@@ -1,8 +1,10 @@
 // src/utils/agenda.js
 /**
- * Simple in-memory storage for agenda items
- * In a production environment, consider using a database
+ * Utilitário de gerenciamento de pautas e sugestões para reuniões
+ * Armazenamento em memória, considere migrar para banco de dados em produção
  */
+
+const logger = require('./logger');
 
 // Store agenda items
 let agenda = [];
@@ -32,6 +34,7 @@ function addSuggestion(text, userId, username) {
   };
   
   suggestions.push(suggestion);
+  logger.info(`Nova sugestão #${suggestion.id} adicionada por ${username} (${userId}): "${text.substring(0, 50)}${text.length > 50 ? '...' : ''}"`);
   return suggestion;
 }
 
@@ -44,22 +47,27 @@ function approveSuggestion(id) {
   const index = suggestions.findIndex(s => s.id === id);
   
   if (index === -1) {
+    logger.warn(`Tentativa de aprovar sugestão inexistente com ID ${id}`);
     return null;
   }
   
   const suggestion = suggestions[index];
   
   // Add to agenda
-  agenda.push({
+  const agendaItem = {
     id: agenda.length + 1,
     text: suggestion.text,
     suggestedBy: suggestion.username,
+    suggestedById: suggestion.userId,
     approvedAt: new Date()
-  });
+  };
+  
+  agenda.push(agendaItem);
   
   // Remove from pending suggestions
   suggestions.splice(index, 1);
   
+  logger.info(`Sugestão #${id} aprovada e adicionada à pauta como item #${agendaItem.id}`);
   return suggestion;
 }
 
@@ -81,6 +89,7 @@ function getSuggestions() {
 
 /**
  * Reset the agenda (e.g., weekly) and save to history
+ * @returns {boolean} True if reset was successful
  */
 function resetAgenda() {
   if (agenda.length > 0) {
@@ -91,19 +100,36 @@ function resetAgenda() {
       weekNumber: getWeekNumber(new Date())
     });
     
+    logger.info(`Pauta resetada. ${agenda.length} itens movidos para o histórico.`);
+    
     // Clean up old history (older than 1 month)
+    const oldHistoryCount = agendaHistory.length;
     cleanupOldHistory();
+    
+    if (oldHistoryCount > agendaHistory.length) {
+      logger.info(`Limpeza automática do histórico: ${oldHistoryCount - agendaHistory.length} pautas antigas removidas.`);
+    }
+    
+    agenda = [];
+    return true;
+  } else {
+    logger.info(`Pauta resetada, mas não havia itens para salvar no histórico.`);
+    agenda = [];
+    return true;
   }
-  
-  agenda = [];
 }
 
 /**
  * Reset suggestions
+ * @returns {boolean} True if reset was successful
  */
 function resetSuggestions() {
+  const count = suggestions.length;
   suggestions = [];
   nextSuggestionId = 1;
+  
+  logger.info(`Sugestões resetadas. ${count} sugestões pendentes foram removidas.`);
+  return true;
 }
 
 /**
@@ -114,6 +140,7 @@ function resetSuggestions() {
  */
 function addAuthorizedUser(userId, username) {
   if (authorizedUsers.some(user => user.id === userId)) {
+    logger.info(`Tentativa de autorizar usuário ${username} (${userId}) que já estava autorizado.`);
     return false;
   }
   
@@ -123,6 +150,7 @@ function addAuthorizedUser(userId, username) {
     addedAt: new Date()
   });
   
+  logger.info(`Usuário ${username} (${userId}) foi autorizado.`);
   return true;
 }
 
@@ -133,9 +161,17 @@ function addAuthorizedUser(userId, username) {
  */
 function removeAuthorizedUser(userId) {
   const initialLength = authorizedUsers.length;
+  const userToRemove = authorizedUsers.find(user => user.id === userId);
+  
   authorizedUsers = authorizedUsers.filter(user => user.id !== userId);
   
-  return authorizedUsers.length < initialLength;
+  if (authorizedUsers.length < initialLength) {
+    logger.info(`Usuário ${userToRemove ? userToRemove.username : userId} foi desautorizado.`);
+    return true;
+  } else {
+    logger.warn(`Tentativa de desautorizar usuário ${userId} que não estava na lista.`);
+    return false;
+  }
 }
 
 /**
@@ -173,7 +209,12 @@ function cleanupOldHistory() {
   const oneMonthAgo = new Date();
   oneMonthAgo.setMonth(oneMonthAgo.getMonth() - 1);
   
+  const oldCount = agendaHistory.length;
   agendaHistory = agendaHistory.filter(entry => entry.archivedAt > oneMonthAgo);
+  
+  if (oldCount > agendaHistory.length) {
+    logger.debug(`Limpeza automática do histórico removeu ${oldCount - agendaHistory.length} entradas antigas.`);
+  }
 }
 
 /**
@@ -185,10 +226,14 @@ function getAgendaHistory() {
 }
 
 /**
- * Manually clean the entire agenda history
+ * Manually clear the entire agenda history
+ * @returns {boolean} True if operation was successful
  */
 function clearAgendaHistory() {
+  const count = agendaHistory.length;
   agendaHistory = [];
+  
+  logger.info(`Todo o histórico de pautas foi limpo. ${count} pautas antigas foram removidas.`);
   return true;
 }
 

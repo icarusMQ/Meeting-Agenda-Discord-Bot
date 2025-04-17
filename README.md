@@ -10,33 +10,37 @@
 
 This project implements a Discord bot that:
 
-1. Automatically generates a **weekly agenda** (reset every week).
+1. Automatically generates a **weekly agenda** (reset every Sunday at midnight).
 2. Allows members to submit agenda suggestions via `/sugerir`.
-3. Lets leader(s) approve or reject suggestions via `/aprovar <id>`.
+3. Lets authorized users approve suggestions via `/aprovar`.
 4. Displays the current agenda with approved items via `/pauta`.
-5. Runs 24/7 in a Docker container, easily deployable on DigitalOcean App Platform.
-6. Includes **CI** with GitHub Actions for linting, tests, and Docker image builds.
+5. Maintains a history of previous agendas via `/historico`.
+6. Allows administrators to manage authorized users via `/autorizar` and `/desautorizar`.
+7. Runs 24/7 in a Docker container, easily deployable on cloud platforms.
+8. Includes comprehensive logging and error handling.
 
 ---
 
 ### 📦 Features
 
 - **Submit suggestions**: `/sugerir texto:"Suggestion description"`
-- **Approve items**: `/aprovar id:<number>` (restricted to leader role)
+- **Approve items**: `/aprovar` (restricted to authorized users)
 - **View agenda**: `/pauta`
-- **Auto-reset**: weekly cron job resetting the agenda
-- **Logging & error handling**: via utility modules
-- **Docker deployment**: lightweight Node.js image
-- **GitHub Actions CI**: lint, test, and build Docker image
+- **View history**: `/historico listar`
+- **Manage authorized users**: `/autorizar`, `/desautorizar`, `/autorizados`
+- **Reset agenda**: `/resetar` (with confirmation)
+- **Auto-reset**: Weekly cron job resetting the agenda
+- **Logging & error handling**: Comprehensive event tracking
+- **Confirmation dialogs**: For destructive operations
+- **Docker deployment**: Lightweight Node.js image
 
 ---
 
 ### 🎯 Requirements
 
-- Node.js v18+
+- Node.js v16+
 - npm or Yarn
-- Docker (for local tests and image build)
-- DigitalOcean account (optional, for deployment)
+- Docker (for deployment)
 - Access to Discord Developer Portal (to configure the bot)
 
 ---
@@ -44,35 +48,46 @@ This project implements a Discord bot that:
 ### 📁 Project Structure
 
 ```plaintext
-discord-bot/
+meeting-agenda-discord-bot/
 ├── src/
-│   ├── commands/         # Command handlers (ping, sugerir, aprovar, pauta)
+│   ├── commands/         # Command handlers (autorizar, pauta, resetar, etc.)
 │   ├── events/           # Event listeners (ready, interactionCreate)
-│   ├── utils/            # Helpers (logger, database, etc.)
-│   ├── config/           # Default settings (cron schedule, paths)
+│   ├── utils/            # Utilities (agenda, logger, errorHandler)
 │   └── index.js          # Bot entrypoint
+├── scripts/
+│   └── deploy-commands.js # Register slash commands
+├── logs/                 # Application logs (created on first run)
 ├── .env.example          # Sample environment variables file
 ├── .gitignore
 ├── Dockerfile            # Docker image configuration
 ├── package.json
-├── package-lock.json
-├── README.md             # This file
-└── .github/
-    └── workflows/        # CI: lint, tests, Docker build
+└── README.md             # This file
 ```
 
 ---
 
 ### ⚙️ Setup
 
-1. Rename `.env.example` to `.env` and fill in:
+1. Clone this repository
+2. Copy `.env.example` to `.env` and fill in:
    ```env
-   BOT_TOKEN=<your_bot_token>
-   CLIENT_ID=<your_application_id>
-   GUILD_ID=<your_server_id_for_guild_commands>
-   LEADER_ROLE_ID=<leader_role_id>
+   BOT_TOKEN=your_discord_bot_token
+   GUILD_ID=your_server_id_for_development
+   LEADER_ROLE_ID=leader_role_id
+   AUTHORIZED_ROLE_ID=authorized_role_id
+   NOTIFICATION_CHANNEL_ID=channel_for_automated_notifications
+   SUGGESTION_CHANNEL_ID=channel_to_show_new_suggestions
+   DEBUG=false
    ```
-2. In the Discord Developer Portal, enable required **Intents** (Message Content, Members, etc.).
+3. In the Discord Developer Portal, enable required **Intents** (Message Content, Server Members, etc.)
+4. Install dependencies:
+   ```bash
+   npm install
+   ```
+5. Register slash commands:
+   ```bash
+   npm run deploy-commands
+   ```
 
 ---
 
@@ -80,13 +95,13 @@ discord-bot/
 
 ```bash
 # Install dependencies
-npm ci
+npm install
 
 # Run in development mode (with nodemon)
 npm run dev
 
 # Run in production
-env-cmd -f .env node src/index.js
+npm start
 ```
 
 ---
@@ -95,51 +110,30 @@ env-cmd -f .env node src/index.js
 
 #### Build the image
 ```bash
-docker build -t discord-bot:latest .
+docker build -t meeting-agenda-bot:latest .
 ```
 
-#### Test container locally
+#### Run container
 ```bash
-# Using your local .env file
-docker run --env-file .env discord-bot:latest
+docker run --env-file .env meeting-agenda-bot:latest
 ```
 
 ---
 
-### 🚀 Deploy on DigitalOcean App Platform
+### 📋 Commands
 
-1. Commit and push to GitHub.  
-2. In the DigitalOcean dashboard, **Create App** → select your GitHub repo.  
-3. It will detect your Dockerfile—configure:  
-   - **Service type**: Worker  
-   - **Instance size**: 512MB (or as needed)  
-   - **Environment variables**: set `BOT_TOKEN`, `LEADER_ROLE_ID`, etc.  
-4. Enable **Auto-deploy** (rebuild on every push).  
-5. Your app will launch on a 24/7 instance.
-
----
-
-### 📈 CI with GitHub Actions
-
-The workflow `.github/workflows/ci.yml`:
-
-1. Checks out the code  
-2. Sets up Node.js 18  
-3. Runs `npm ci`  
-4. Lints (if ESLint config present)  
-5. Runs tests (`npm test`)  
-6. Builds the Docker image  
-7. _Optional_: Pushes to Docker Hub (configure `DOCKER_USERNAME` and `DOCKER_PASSWORD` secrets)
-
----
-
-### 🤝 Contributing
-
-1. Fork this repository.  
-2. Create a branch: `git checkout -b feat/your-feature`.  
-3. Commit your changes: `git commit -m "feat: your feature description"`.  
-4. Push to your branch: `git push origin feat/your-feature`.  
-5. Open a Pull Request and describe your changes.
+| Command | Description | Access |
+|---------|-------------|--------|
+| `/ajuda` | Shows help information | Everyone |
+| `/pauta` | Shows current agenda | Everyone |
+| `/sugerir` | Submit a suggestion | Everyone |
+| `/historico listar` | View previous agendas | Everyone |
+| `/aprovar` | Approve a suggestion | Authorized users |
+| `/autorizados` | List authorized users | Authorized users |
+| `/autorizar` | Authorize a user | Admins/Leaders |
+| `/desautorizar` | Remove authorization | Admins/Leaders |
+| `/resetar` | Reset the agenda | Admins |
+| `/historico limpar` | Clear agenda history | Admins |
 
 ---
 
@@ -153,33 +147,37 @@ The workflow `.github/workflows/ci.yml`:
 
 Este projeto implementa um bot para Discord que:
 
-1. Gera uma **pauta semanal** vazia automaticamente (resetada toda semana).
+1. Gera uma **pauta semanal** automaticamente (resetada todo domingo à meia-noite).
 2. Permite que membros submetam sugestões de pauta via `/sugerir`.
-3. Permite que o líder(s) aprove ou rejeite sugestões via `/aprovar <id>`.
+3. Permite que usuários autorizados aprovem sugestões via `/aprovar`.
 4. Exibe a pauta atual com itens aprovados via `/pauta`.
-5. Roda 24/7 em um contêiner Docker, facilmente implantável no DigitalOcean App Platform.
-6. Possui **CI** com GitHub Actions para lint, testes e build de imagem Docker.
+5. Mantém um histórico de pautas anteriores via `/historico`.
+6. Permite que administradores gerenciem usuários autorizados via `/autorizar` e `/desautorizar`.
+7. Roda 24/7 em um contêiner Docker, facilmente implantável em plataformas cloud.
+8. Inclui sistema completo de logs e tratamento de erros.
 
 ---
 
 ### 📦 Recursos
 
 - **Submissão de sugestões**: `/sugerir texto:"Descrição da sugestão"`
-- **Aprovação de itens**: `/aprovar id:<número>` (restrito a papel de líder)
+- **Aprovação de itens**: `/aprovar` (restrito a usuários autorizados)
 - **Visualização da pauta**: `/pauta`
-- **Reset automático**: cron job semanal redefinindo a agenda
-- **Logs e tratamento de erros**: via sistema de utilitários
-- **Deploy via Docker**: imagem leve baseada em Node.js
-- **Integração GitHub Actions**: lint, testes e build de imagem
+- **Visualização do histórico**: `/historico listar`
+- **Gerenciamento de usuários autorizados**: `/autorizar`, `/desautorizar`, `/autorizados`
+- **Reset da pauta**: `/resetar` (com confirmação)
+- **Reset automático**: Agendamento semanal para resetar a pauta
+- **Logs e tratamento de erros**: Rastreamento abrangente de eventos
+- **Diálogos de confirmação**: Para operações destrutivas
+- **Deploy via Docker**: Imagem leve baseada em Node.js
 
 ---
 
 ### 🎯 Pré-requisitos
 
-- Node.js v18+
+- Node.js v16+
 - NPM ou Yarn
-- Docker (para testes locais e build de imagem)
-- Conta no DigitalOcean (opcional, para deploy)
+- Docker (para deploy)
 - Acesso ao Discord Developer Portal (para configurar o bot)
 
 ---
@@ -187,35 +185,46 @@ Este projeto implementa um bot para Discord que:
 ### 📁 Estrutura do Projeto
 
 ```plaintext
-discord-bot/
+meeting-agenda-discord-bot/
 ├── src/
-│   ├── commands/         # Handlers de comandos (ping, sugerir, aprovar, pauta)
+│   ├── commands/         # Handlers de comandos (autorizar, pauta, resetar, etc.)
 │   ├── events/           # Listeners de eventos (ready, interactionCreate)
-│   ├── utils/            # Helpers (logger, banco de dados, etc.)
-│   ├── config/           # Configurações padrão (cron schedule, paths)
+│   ├── utils/            # Utilitários (agenda, logger, errorHandler)
 │   └── index.js          # Ponto de entrada do bot
+├── scripts/
+│   └── deploy-commands.js # Registrar comandos slash
+├── logs/                 # Logs da aplicação (criado na primeira execução)
 ├── .env.example          # Exemplo de variáveis de ambiente
 ├── .gitignore
 ├── Dockerfile            # Configuração para criar a imagem Docker
 ├── package.json
-├── package-lock.json
-├── README.md             # Este arquivo
-└── .github/
-    └── workflows/        # CI: lint, testes, build Docker
+└── README.md             # Este arquivo
 ```
 
 ---
 
 ### ⚙️ Configuração
 
-1. Renomeie `.env.example` para `.env` e preencha:
+1. Clone este repositório
+2. Copie `.env.example` para `.env` e preencha:
    ```env
-   BOT_TOKEN=<seu_token_do_bot>
-   CLIENT_ID=<seu_application_id>
-   GUILD_ID=<ID_do_servidor_para_registro_de_comandos>
-   LEADER_ROLE_ID=<ID_do_papel_do_líder>
+   BOT_TOKEN=seu_token_do_discord_bot
+   GUILD_ID=id_do_servidor_para_desenvolvimento
+   LEADER_ROLE_ID=id_do_papel_de_lider
+   AUTHORIZED_ROLE_ID=id_do_papel_de_autorizado
+   NOTIFICATION_CHANNEL_ID=canal_para_notificacoes_automaticas
+   SUGGESTION_CHANNEL_ID=canal_para_mostrar_novas_sugestoes
+   DEBUG=false
    ```
-2. No Discord Developer Portal, habilite os **Intents** necessários (Message Content, Members, etc.).
+3. No Discord Developer Portal, habilite os **Intents** necessários (Message Content, Server Members, etc.)
+4. Instale as dependências:
+   ```bash
+   npm install
+   ```
+5. Registre os comandos slash:
+   ```bash
+   npm run deploy-commands
+   ```
 
 ---
 
@@ -223,13 +232,13 @@ discord-bot/
 
 ```bash
 # Instalar dependências
-npm ci
+npm install
 
 # Rodar em modo desenvolvimento (com nodemon)
 npm run dev
 
-# Rodar produção
-env-cmd -f .env node src/index.js
+# Rodar em produção
+npm start
 ```
 
 ---
@@ -238,51 +247,30 @@ env-cmd -f .env node src/index.js
 
 #### Build da imagem
 ```bash
-docker build -t discord-bot:latest .
+docker build -t meeting-agenda-bot:latest .
 ```
 
-#### Testar container local
+#### Executar container
 ```bash
-# Usa seu .env local
-docker run --env-file .env discord-bot:latest
+docker run --env-file .env meeting-agenda-bot:latest
 ```
 
 ---
 
-### 🚀 Deploy no DigitalOcean App Platform
+### 📋 Comandos
 
-1. Faça commit e push no GitHub.  
-2. No painel do DigitalOcean, **Create App** → selecione seu repo GitHub.  
-3. Detecte Dockerfile e configure:  
-   - **Service**: Worker  
-   - **Instance size**: 512MB (ou conforme necessidade)  
-   - **Environment variables**: defina `BOT_TOKEN`, `LEADER_ROLE_ID`, etc.  
-4. Defina **Autodeploy** para `ON` (rebuild a cada push).  
-5. O app iniciará automaticamente em instância 24/7.
-
----
-
-### 📈 CI com GitHub Actions
-
-O workflow `.github/workflows/ci.yml` faz:
-
-1. Checkout do código  
-2. Setup Node.js 18  
-3. `npm ci`  
-4. Lint (se `.eslintrc.*` existir)  
-5. Testes (`npm test`)  
-6. Build da imagem Docker  
-7. _Opcional_: Push para Docker Hub (configurar secrets `DOCKER_USERNAME` e `DOCKER_PASSWORD`)
-
----
-
-### 🤝 Contribuindo
-
-1. Faça um fork deste repositório.  
-2. Crie uma branch: `git checkout -b feat/nova-funcionalidade`.  
-3. Commit suas alterações: `git commit -m "feat: descrição da mudança"`.  
-4. Push para a branch: `git push origin feat/nova-funcionalidade`.  
-5. Abra um Pull Request e descreva sua proposta.
+| Comando | Descrição | Acesso |
+|---------|-----------|--------|
+| `/ajuda` | Mostra informações de ajuda | Todos |
+| `/pauta` | Mostra a pauta atual | Todos |
+| `/sugerir` | Enviar uma sugestão | Todos |
+| `/historico listar` | Ver pautas anteriores | Todos |
+| `/aprovar` | Aprovar uma sugestão | Usuários autorizados |
+| `/autorizados` | Listar usuários autorizados | Usuários autorizados |
+| `/autorizar` | Autorizar um usuário | Admins/Líderes |
+| `/desautorizar` | Remover autorização | Admins/Líderes |
+| `/resetar` | Resetar a pauta | Admins |
+| `/historico limpar` | Limpar histórico de pautas | Admins |
 
 ---
 
