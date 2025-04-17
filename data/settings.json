@@ -8,5 +8,12 @@
     "resetMinute": 0,
     "notificationChannelId": null,
     "language": "pt-BR"
+  },
+  "1362457771341250770": {
+    "resetDay": 0,
+    "resetHour": 0,
+    "resetMinute": 0,
+    "notificationChannelId": null,
+    "language": "pt-BR"
   }
 }
