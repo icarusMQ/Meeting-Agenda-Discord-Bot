@@ -64,41 +64,46 @@ module.exports = {
       successNotificationMessage = `📢 **Aviso**: ${interaction.user.toString()} resetou todas as sugestões pendentes.`;
     }
     
-    // Enviar mensagem de confirmação
-    const response = await interaction.reply({
+    // Enviar mensagem de confirmação com novo padrão de interação
+    await interaction.reply({
       content: confirmMessage,
       components: [row],
-      ephemeral: true,
-      fetchReply: true
+      ephemeral: true
     });
     
-    // Coletor para os botões
-    const collector = response.createMessageComponentCollector({
-      componentType: ComponentType.Button,
-      time: 30000 // 30 segundos para responder
-    });
-    
-    collector.on('collect', async i => {
+    // Coletor para os botões usando o novo padrão
+    const filter = i => {
       if (i.user.id !== interaction.user.id) {
-        return i.reply({
+        i.reply({
           content: '❌ Estes botões não são para você.',
           ephemeral: true
         });
+        return false;
       }
+      return true;
+    };
+    
+    try {
+      // Aguardar interação do usuário
+      const buttonInteraction = await interaction.channel.awaitMessageComponent({ 
+        filter, 
+        componentType: ComponentType.Button, 
+        time: 30000 // 30 segundos para responder
+      });
       
-      await i.update({
+      // Atualizar mensagem sem botões
+      await buttonInteraction.update({
         components: []
       });
       
-      if (i.customId === 'cancel_reset') {
-        await i.editReply({
-          content: cancelMessage,
-          ephemeral: true
+      if (buttonInteraction.customId === 'cancel_reset') {
+        await buttonInteraction.editReply({
+          content: cancelMessage
         });
         return;
       }
       
-      if (i.customId === 'confirm_reset') {
+      if (buttonInteraction.customId === 'confirm_reset') {
         let success = false;
         
         if (subcommand === 'pauta') {
@@ -110,9 +115,8 @@ module.exports = {
         }
         
         if (success) {
-          await i.editReply({
-            content: successMessage,
-            ephemeral: true
+          await buttonInteraction.editReply({
+            content: successMessage
           });
           
           // Notificar no canal
@@ -120,22 +124,25 @@ module.exports = {
             content: successNotificationMessage
           });
         } else {
-          await i.editReply({
-            content: '❌ Ocorreu um erro ao executar o reset.',
-            ephemeral: true
+          await buttonInteraction.editReply({
+            content: '❌ Ocorreu um erro ao executar o reset.'
           });
         }
       }
-    });
-    
-    collector.on('end', collected => {
-      if (collected.size === 0) {
-        interaction.editReply({
+    } catch (error) {
+      // Timeout ou erro
+      if (error.code === 'InteractionCollectorError') {
+        await interaction.editReply({
           content: '⏱️ Tempo esgotado. Nenhuma alteração foi realizada.',
-          components: [],
-          ephemeral: true
+          components: []
+        });
+      } else {
+        logger.error(`Erro ao processar interação: ${error.message}`, error);
+        await interaction.editReply({
+          content: '❌ Ocorreu um erro ao processar sua solicitação.',
+          components: []
         });
       }
-    });
+    }
   })
 };

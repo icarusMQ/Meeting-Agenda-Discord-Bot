@@ -51,7 +51,8 @@ module.exports = {
         .setFooter({ text: 'Use /configreset configurar para alterar estas configurações' });
       
       return interaction.reply({ embeds: [embed], ephemeral: true });
-    } else if (subcommand === 'resetar') {
+    } 
+    else if (subcommand === 'resetar') {
       // Confirm before resetting
       const confirmButton = new ButtonBuilder()
         .setCustomId('confirm_reset_settings')
@@ -65,65 +66,75 @@ module.exports = {
         
       const row = new ActionRowBuilder().addComponents(confirmButton, cancelButton);
       
-      const response = await interaction.reply({
+      // Enviar mensagem de confirmação
+      await interaction.reply({
         content: '⚠️ **Atenção**\n\nIsso irá resetar todas as configurações do bot para os valores padrão.\n\nDeseja continuar?',
         components: [row],
-        ephemeral: true,
-        fetchReply: true
+        ephemeral: true
       });
       
-      const collector = response.createMessageComponentCollector({
-        componentType: ComponentType.Button,
-        time: 30000
-      });
-      
-      collector.on('collect', async i => {
+      // Criar filtro para interações
+      const filter = i => {
         if (i.user.id !== interaction.user.id) {
-          return i.reply({
+          i.reply({
             content: '❌ Estes botões não são para você.',
             ephemeral: true
           });
+          return false;
         }
+        return true;
+      };
+      
+      try {
+        // Aguardar interação do usuário
+        const buttonInteraction = await interaction.channel.awaitMessageComponent({
+          filter,
+          componentType: ComponentType.Button,
+          time: 30000 // 30 segundos para responder
+        });
         
-        await i.update({ components: [] });
+        // Remover os botões
+        await buttonInteraction.update({ components: [] });
         
-        if (i.customId === 'cancel_reset_settings') {
-          await i.editReply({
-            content: 'Operação cancelada. As configurações não foram alteradas.',
-            ephemeral: true
+        if (buttonInteraction.customId === 'cancel_reset_settings') {
+          await buttonInteraction.editReply({
+            content: 'Operação cancelada. As configurações não foram alteradas.'
           });
           return;
         }
         
-        if (i.customId === 'confirm_reset_settings') {
+        if (buttonInteraction.customId === 'confirm_reset_settings') {
           const success = resetSettings(guildId);
           
           if (success) {
             logger.info(`Guild ${guildId}: Configurações resetadas por ${interaction.user.tag} (${interaction.user.id})`);
             
-            await i.editReply({
-              content: '✅ Todas as configurações foram resetadas para os valores padrão.',
-              ephemeral: true
+            await buttonInteraction.editReply({
+              content: '✅ Todas as configurações foram resetadas para os valores padrão.'
             });
           } else {
-            await i.editReply({
-              content: '❌ Ocorreu um erro ao resetar as configurações.',
-              ephemeral: true
+            await buttonInteraction.editReply({
+              content: '❌ Ocorreu um erro ao resetar as configurações.'
             });
           }
         }
-      });
-      
-      collector.on('end', collected => {
-        if (collected.size === 0) {
-          interaction.editReply({
+      } catch (error) {
+        // Timeout ou erro
+        if (error.code === 'InteractionCollectorError') {
+          await interaction.editReply({
             content: '⏱️ Tempo esgotado. Nenhuma alteração foi realizada.',
-            components: [],
-            ephemeral: true
+            components: []
+          });
+        } else {
+          logger.error(`Erro ao processar interação: ${error.message}`, error);
+          await interaction.editReply({
+            content: '❌ Ocorreu um erro ao processar sua solicitação.',
+            components: []
           });
         }
-      });
-    } else if (subcommand === 'configurar') {
+      }
+    } 
+    else if (subcommand === 'configurar') {
       // Create day selection menu
       const daySelect = new StringSelectMenuBuilder()
         .setCustomId('reset_day')
@@ -175,42 +186,35 @@ module.exports = {
       const dayRow = new ActionRowBuilder().addComponents(daySelect);
       const hourRow = new ActionRowBuilder().addComponents(hourSelect);
       
-      const response = await interaction.reply({
-        content: '⚙️ **Configuração de Reset**\n\nSelecione o dia da semana e a hora em que a pauta será resetada automaticamente.',
-        components: [dayRow, hourRow],
-        ephemeral: true,
-        fetchReply: true
-      });
-      
       // Object to store selections
       const selections = {
         day: null,
         hour: null
       };
       
-      // Check if both day and hour were selected
-      const checkComplete = async (i) => {
+      // Enviar os menus de seleção
+      await interaction.reply({
+        content: '⚙️ **Configuração de Reset**\n\nSelecione o dia da semana e a hora em que a pauta será resetada automaticamente.',
+        components: [dayRow, hourRow],
+        ephemeral: true
+      });
+      
+      // Criar filtro para interações
+      const filter = i => {
+        if (i.user.id !== interaction.user.id) {
+          i.reply({
+            content: '❌ Estes menus não são para você.',
+            ephemeral: true
+          });
+          return false;
+        }
+        return true;
+      };
+      
+      // Função para verificar se a configuração está completa e aplicar as alterações
+      const applySettings = () => {
         if (selections.day !== null && selections.hour !== null) {
           const dayName = getDayName(parseInt(selections.day));
-          
-          try {
-            await i.update({
-              content: `✅ **Configuração Completa**\n\nA pauta será resetada todo(a) **${dayName}** às **${selections.hour}:00**.\n\nEsta configuração é específica para este servidor.`,
-              components: [],
-              ephemeral: true
-            });
-          } catch (error) {
-            if (error.code !== 'InteractionAlreadyReplied') {
-              throw error;
-            }
-            
-            // If already replied, use editReply instead
-            await i.editReply({
-              content: `✅ **Configuração Completa**\n\nA pauta será resetada todo(a) **${dayName}** às **${selections.hour}:00**.\n\nEsta configuração é específica para este servidor.`,
-              components: [],
-              ephemeral: true
-            });
-          }
           
           // Update settings for this guild
           updateSetting(guildId, 'resetDay', parseInt(selections.day));
@@ -218,51 +222,77 @@ module.exports = {
           updateSetting(guildId, 'resetMinute', 0);
           
           logger.info(`Guild ${guildId}: Configuração de reset atualizada por ${interaction.user.tag} (${interaction.user.id}): dia ${selections.day}, hora ${selections.hour}`);
+          
+          return true;
         }
+        return false;
       };
       
-      // Collector for components
-      const collector = response.createMessageComponentCollector({
-        componentType: ComponentType.StringSelect,
-        time: 60000 // 1 minuto para selecionar
-      });
+      // Definir um timeout para o coletor
+      const collector_end_time = Date.now() + 60000; // 1 minuto
       
-      collector.on('collect', async i => {
-        if (i.user.id !== interaction.user.id) {
-          return i.reply({
-            content: '❌ Estes menus não são para você.',
-            ephemeral: true
+      // Processamento de seleções - estratégia de loop para coleção múltipla
+      try {
+        let configComplete = false;
+        while (Date.now() < collector_end_time && !configComplete) {
+          // Esperar pela próxima interação
+          const selectInteraction = await interaction.channel.awaitMessageComponent({
+            filter,
+            componentType: ComponentType.StringSelect,
+            time: collector_end_time - Date.now() // Tempo restante
           });
+          
+          if (selectInteraction.customId === 'reset_day') {
+            selections.day = selectInteraction.values[0];
+            
+            // Verificar se ambas as seleções foram feitas
+            if (selections.hour !== null) {
+              const dayName = getDayName(parseInt(selections.day));
+              await selectInteraction.update({
+                content: `✅ **Configuração Completa**\n\nA pauta será resetada todo(a) **${dayName}** às **${selections.hour}:00**.\n\nEsta configuração é específica para este servidor.`,
+                components: [],
+              });
+              configComplete = applySettings();
+            } else {
+              await selectInteraction.update({
+                content: `⚙️ **Configuração de Reset**\n\nDia selecionado: **${getDayName(parseInt(selections.day))}**\n\nAgora selecione a hora.`,
+                components: [dayRow, hourRow]
+              });
+            }
+          } else if (selectInteraction.customId === 'reset_hour') {
+            selections.hour = selectInteraction.values[0];
+            
+            // Verificar se ambas as seleções foram feitas
+            if (selections.day !== null) {
+              const dayName = getDayName(parseInt(selections.day));
+              await selectInteraction.update({
+                content: `✅ **Configuração Completa**\n\nA pauta será resetada todo(a) **${dayName}** às **${selections.hour}:00**.\n\nEsta configuração é específica para este servidor.`,
+                components: [],
+              });
+              configComplete = applySettings();
+            } else {
+              await selectInteraction.update({
+                content: `⚙️ **Configuração de Reset**\n\nSelecione um dia da semana.\n\nHora selecionada: **${selections.hour}:00**`,
+                components: [dayRow, hourRow]
+              });
+            }
+          }
         }
-        
-        if (i.customId === 'reset_day') {
-          selections.day = i.values[0];
-          await i.update({
-            content: `⚙️ **Configuração de Reset**\n\nDia selecionado: **${getDayName(parseInt(selections.day))}**\n\n${selections.hour !== null ? `Hora selecionada: **${selections.hour}:00**` : 'Agora selecione a hora.'}`,
-            components: [dayRow, hourRow],
-            ephemeral: true
-          });
-        } else if (i.customId === 'reset_hour') {
-          selections.hour = i.values[0];
-          await i.update({
-            content: `⚙️ **Configuração de Reset**\n\n${selections.day !== null ? `Dia selecionado: **${getDayName(parseInt(selections.day))}**` : 'Selecione um dia da semana.'}\n\nHora selecionada: **${selections.hour}:00**`,
-            components: [dayRow, hourRow],
-            ephemeral: true
-          });
-        }
-        
-        await checkComplete(i);
-      });
-      
-      collector.on('end', collected => {
-        if (collected.size === 0 || (selections.day === null || selections.hour === null)) {
-          interaction.editReply({
+      } catch (error) {
+        // Timeout ou erro
+        if (error.code === 'InteractionCollectorError') {
+          await interaction.editReply({
             content: '⏱️ Tempo esgotado ou configuração incompleta. Nenhuma alteração foi realizada.',
-            components: [],
-            ephemeral: true
+            components: []
+          });
+        } else {
+          logger.error(`Erro ao processar interação de configuração: ${error.message}`, error);
+          await interaction.editReply({
+            content: '❌ Ocorreu um erro ao processar sua solicitação.',
+            components: []
           });
         }
-      });
+      }
     }
   })
 };

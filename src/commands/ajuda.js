@@ -20,8 +20,8 @@ module.exports = {
     // Get day name safely
     let dayName = 'Domingo'; // Default
     try {
-      const dayObj = settings.getDayName(resetDay);
-      dayName = dayObj.pt;
+      // Get the day name directly as string, not as object
+      dayName = settings.getDayName(resetDay);
     } catch (error) {
       logger.error(`Error getting day name for day ${resetDay}: ${error.message}`);
     }

@@ -1,8 +1,19 @@
 {
   "agenda": [],
   "suggestions": [],
-  "authorizedUsers": [],
+  "authorizedUsers": [
+    {
+      "id": "332350389083176967",
+      "username": "icarus08971",
+      "addedAt": "2025-04-17T14:59:32.271Z"
+    },
+    {
+      "id": "703775460173021274",
+      "username": "lav9585",
+      "addedAt": "2025-04-17T15:00:12.193Z"
+    }
+  ],
   "agendaHistory": [],
-  "nextAgendaId": 3,
-  "nextSuggestionId": 3
+  "nextAgendaId": 4,
+  "nextSuggestionId": 4
 }

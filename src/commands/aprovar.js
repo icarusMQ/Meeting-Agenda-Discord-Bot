@@ -52,7 +52,7 @@ module.exports = {
     const row = new ActionRowBuilder().addComponents(selectMenu);
     
     // Send the message with the select menu
-    const response = await interaction.reply({
+    await interaction.reply({
       content: '📋 **Aprovar Sugestão**\n\nSelecione uma sugestão da lista abaixo para aprová-la e adicioná-la à pauta:',
       components: [row],
       ephemeral: true
@@ -60,27 +60,33 @@ module.exports = {
     
     logger.info(`Guild ${guildId}: Menu de aprovação de sugestões aberto por ${interaction.user.tag} (${interaction.user.id})`);
     
-    // Create a collector for the menu interaction
-    const collector = response.createMessageComponentCollector({ 
-      componentType: ComponentType.StringSelect,
-      time: 60000 // 1 minute timeout
-    });
-    
-    collector.on('collect', async i => {
+    // Criar filtro para interações
+    const filter = i => {
       if (i.user.id !== interaction.user.id) {
-        return i.reply({
+        i.reply({
           content: '❌ Este menu não é para você.',
           ephemeral: true
         });
+        return false;
       }
+      return true;
+    };
+    
+    try {
+      // Aguardar interação do usuário
+      const selectInteraction = await interaction.channel.awaitMessageComponent({
+        filter,
+        componentType: ComponentType.StringSelect,
+        time: 60000 // 1 minuto para selecionar
+      });
       
-      const selectedId = parseInt(i.values[0], 10);
+      const selectedId = parseInt(selectInteraction.values[0], 10);
       const approved = approveSuggestion(guildId, selectedId);
       
       if (approved) {
         logger.info(`Guild ${guildId}: Sugestão #${selectedId} aprovada por ${interaction.user.tag} (${interaction.user.id})`);
         
-        await i.update({
+        await selectInteraction.update({
           content: `✅ **Sugestão Aprovada**\n\nVocê aprovou com sucesso a sugestão #${selectedId} e ela foi adicionada à pauta!\n\n📝 **${approved.text}**\n\nSugerida por: ${approved.suggestedBy}`,
           components: [],
           ephemeral: true
@@ -93,22 +99,27 @@ module.exports = {
       } else {
         logger.warn(`Guild ${guildId}: Falha ao aprovar sugestão #${selectedId} por ${interaction.user.tag} (${interaction.user.id})`);
         
-        await i.update({
+        await selectInteraction.update({
           content: `❌ Erro ao aprovar sugestão #${selectedId}. É possível que ela já tenha sido aprovada ou removida.`,
           components: [],
           ephemeral: true
         });
       }
-    });
-    
-    collector.on('end', collected => {
-      if (collected.size === 0) {
-        interaction.editReply({
+    } catch (error) {
+      // Timeout ou erro
+      if (error.code === 'InteractionCollectorError') {
+        await interaction.editReply({
           content: '⏱️ Tempo esgotado. Nenhuma sugestão foi aprovada.',
           components: [],
           ephemeral: true
         });
+      } else {
+        logger.error(`Erro ao processar interação: ${error.message}`, error);
+        await interaction.editReply({
+          content: '❌ Ocorreu um erro ao processar sua solicitação.',
+          components: []
+        });
       }
-    });
+    }
   })
 };

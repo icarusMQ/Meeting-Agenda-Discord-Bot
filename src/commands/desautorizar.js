@@ -53,50 +53,53 @@ module.exports = {
     const row = new ActionRowBuilder().addComponents(confirmButton, cancelButton);
     
     // Enviar mensagem com os botões
-    const response = await interaction.reply({
+    await interaction.reply({
       content: `⚠️ **Confirmação**\n\nVocê está prestes a remover a autorização de ${targetUser.toString()} para aprovar sugestões de pauta.\n\nDeseja continuar?`,
       components: [row],
-      ephemeral: true,
-      fetchReply: true
+      ephemeral: true
     });
     
-    // Coletor de interação para os botões
-    const collector = response.createMessageComponentCollector({ 
-      componentType: ComponentType.Button,
-      time: 30000 // 30 segundos para responder
-    });
-    
-    collector.on('collect', async i => {
+    // Criar filtro para interações
+    const filter = i => {
       if (i.user.id !== interaction.user.id) {
-        return i.reply({
+        i.reply({
           content: '❌ Estes botões não são para você.',
           ephemeral: true
         });
+        return false;
       }
+      return true;
+    };
+    
+    try {
+      // Aguardar interação do usuário
+      const buttonInteraction = await interaction.channel.awaitMessageComponent({
+        filter,
+        componentType: ComponentType.Button,
+        time: 30000 // 30 segundos para responder
+      });
       
       // Remover os botões
-      await i.update({
+      await buttonInteraction.update({
         components: []
       });
       
-      if (i.customId === 'cancel') {
-        await i.editReply({
-          content: '✅ Operação cancelada.',
-          ephemeral: true
+      if (buttonInteraction.customId === 'cancel') {
+        await buttonInteraction.editReply({
+          content: '✅ Operação cancelada.'
         });
         return;
       }
       
-      if (i.customId === 'confirm') {
+      if (buttonInteraction.customId === 'confirm') {
         // Remover da lista de autorizados
         const success = removeAuthorizedUser(guildId, targetUser.id);
         
         if (success) {
           logger.info(`Guild ${guildId}: Usuário ${targetUser.tag} (${targetUser.id}) foi desautorizado por ${interaction.user.tag} (${interaction.user.id})`);
           
-          await i.editReply({
-            content: `✅ ${targetUser.toString()} não está mais autorizado a aprovar sugestões.`,
-            ephemeral: true
+          await buttonInteraction.editReply({
+            content: `✅ ${targetUser.toString()} não está mais autorizado a aprovar sugestões.`
           });
           
           // Também enviar uma mensagem no canal para notificar
@@ -106,22 +109,25 @@ module.exports = {
         } else {
           logger.error(`Guild ${guildId}: Erro ao desautorizar usuário ${targetUser.tag} (${targetUser.id})`);
           
-          await i.editReply({
-            content: `❌ Ocorreu um erro ao remover a autorização de ${targetUser.toString()}.`,
-            ephemeral: true
+          await buttonInteraction.editReply({
+            content: `❌ Ocorreu um erro ao remover a autorização de ${targetUser.toString()}.`
           });
         }
       }
-    });
-    
-    collector.on('end', collected => {
-      if (collected.size === 0) {
-        interaction.editReply({
+    } catch (error) {
+      // Timeout ou erro
+      if (error.code === 'InteractionCollectorError') {
+        await interaction.editReply({
           content: '⏱️ Tempo esgotado. A operação foi cancelada.',
-          components: [],
-          ephemeral: true
+          components: []
+        });
+      } else {
+        logger.error(`Erro ao processar interação: ${error.message}`, error);
+        await interaction.editReply({
+          content: '❌ Ocorreu um erro ao processar sua solicitação.',
+          components: []
         });
       }
-    });
+    }
   })
 };

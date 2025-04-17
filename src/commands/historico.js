@@ -113,48 +113,51 @@ module.exports = {
       const row = new ActionRowBuilder().addComponents(confirmButton, cancelButton);
       
       // Enviar mensagem com botões
-      const response = await interaction.reply({
+      await interaction.reply({
         content: `⚠️ **Atenção**\n\nVocê está prestes a limpar permanentemente o histórico de pautas (${history.length} pautas). Esta ação não pode ser desfeita.\n\nDeseja continuar?`,
         components: [row],
-        ephemeral: true,
-        fetchReply: true
+        ephemeral: true
       });
       
-      // Coletor para os botões
-      const collector = response.createMessageComponentCollector({
-        componentType: ComponentType.Button,
-        time: 30000 // 30 segundos para responder
-      });
-      
-      collector.on('collect', async i => {
+      // Criar filtro para interações
+      const filter = i => {
         if (i.user.id !== interaction.user.id) {
-          await i.reply({
+          i.reply({
             content: '❌ Estes botões não são para você.',
             ephemeral: true
           });
-          return;
+          return false;
         }
+        return true;
+      };
+      
+      try {
+        // Aguardar interação do usuário
+        const buttonInteraction = await interaction.channel.awaitMessageComponent({
+          filter,
+          componentType: ComponentType.Button,
+          time: 30000 // 30 segundos para responder
+        });
         
-        await i.update({
+        // Remover botões da mensagem
+        await buttonInteraction.update({
           components: []
         });
         
-        if (i.customId === 'cancel_clear') {
-          await i.editReply({
-            content: '✅ Operação cancelada. O histórico de pautas não foi alterado.',
-            ephemeral: true
+        if (buttonInteraction.customId === 'cancel_clear') {
+          await buttonInteraction.editReply({
+            content: '✅ Operação cancelada. O histórico de pautas não foi alterado.'
           });
           return;
         }
         
-        if (i.customId === 'confirm_clear') {
+        if (buttonInteraction.customId === 'confirm_clear') {
           clearAgendaHistory(guildId);
           
           logger.info(`Guild ${guildId}: Histórico de pautas limpo por ${interaction.user.tag} (${interaction.user.id})`);
           
-          await i.editReply({
-            content: '✅ O histórico de pautas foi limpo com sucesso.',
-            ephemeral: true
+          await buttonInteraction.editReply({
+            content: '✅ O histórico de pautas foi limpo com sucesso.'
           });
           
           // Também notificar no canal
@@ -162,17 +165,21 @@ module.exports = {
             content: `⚠️ **Aviso**: ${interaction.user.toString()} limpou todo o histórico de pautas.`
           });
         }
-      });
-      
-      collector.on('end', collected => {
-        if (collected.size === 0) {
-          interaction.editReply({
+      } catch (error) {
+        // Timeout ou erro
+        if (error.code === 'InteractionCollectorError') {
+          await interaction.editReply({
             content: '⏱️ Tempo esgotado. O histórico de pautas não foi alterado.',
-            components: [],
-            ephemeral: true
+            components: []
+          });
+        } else {
+          logger.error(`Erro ao processar interação: ${error.message}`, error);
+          await interaction.editReply({
+            content: '❌ Ocorreu um erro ao processar sua solicitação.',
+            components: []
           });
         }
-      });
+      }
     }
   })
 };

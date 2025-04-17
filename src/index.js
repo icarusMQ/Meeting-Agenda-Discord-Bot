@@ -81,7 +81,7 @@ function scheduleAgendaReset(guildId) {
     const job = cron.schedule(cronSchedule, () => {
       const formattedTime = `${resetHour.toString().padStart(2, '0')}:${resetMinute.toString().padStart(2, '0')}`;
       
-      logger.info(`Guild ${guildId}: Executando reset agendado da pauta (${dayName.pt} às ${formattedTime})`);
+      logger.info(`Guild ${guildId}: Executando reset agendado da pauta (${dayName} às ${formattedTime})`);
       
       try {
         resetAgenda(guildId);
@@ -112,7 +112,7 @@ function scheduleAgendaReset(guildId) {
     });
     
     resetJobs.set(guildId, job);
-    logger.info(`Guild ${guildId}: Agendamento de reset configurado para ${dayName.pt} às ${resetHour.toString().padStart(2, '0')}:${resetMinute.toString().padStart(2, '0')}`);
+    logger.info(`Guild ${guildId}: Agendamento de reset configurado para ${dayName} às ${resetHour.toString().padStart(2, '0')}:${resetMinute.toString().padStart(2, '0')}`);
   } catch (error) {
     logger.error(`Guild ${guildId}: Erro ao agendar reset:`, error);
   }
