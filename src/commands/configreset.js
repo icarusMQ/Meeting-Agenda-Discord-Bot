@@ -1,153 +1,268 @@
-const { SlashCommandBuilder, PermissionFlagsBits, StringSelectMenuBuilder, ActionRowBuilder, ComponentType } = require('discord.js');
-const { getSetting, updateSetting, getDayName } = require('../utils/settings');
+const { SlashCommandBuilder, PermissionFlagsBits, StringSelectMenuBuilder, StringSelectMenuOptionBuilder, ButtonBuilder, ButtonStyle, ActionRowBuilder, ComponentType, EmbedBuilder } = require('discord.js');
+const { updateSetting, resetSettings, getDayName, getSetting } = require('../utils/settings');
 const logger = require('../utils/logger');
 const { handleAsync } = require('../utils/errorHandler');
 
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('configreset')
-    .setDescription('Configurar dia e hora do reset automático da pauta')
-    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator) // Only admin can use
-    .addSubcommand(subcommand =>
+    .setDescription('Configura ou reseta o dia/hora de reset da pauta')
+    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
+    .addSubcommand(subcommand => 
       subcommand
-        .setName('dia')
-        .setDescription('Alterar o dia da semana em que a pauta é resetada automaticamente'))
-    .addSubcommand(subcommand =>
+        .setName('configurar')
+        .setDescription('Configura o dia e hora de reset da pauta'))
+    .addSubcommand(subcommand => 
       subcommand
-        .setName('hora')
-        .setDescription('Alterar a hora em que a pauta é resetada')
-        .addIntegerOption(option =>
-          option.setName('hora')
-          .setDescription('Hora do reset (0-23)')
-          .setRequired(true)
-          .setMinValue(0)
-          .setMaxValue(23))
-        .addIntegerOption(option =>
-          option.setName('minuto')
-          .setDescription('Minuto do reset (0-59)')
-          .setRequired(true)
-          .setMinValue(0)
-          .setMaxValue(59)))
-    .addSubcommand(subcommand =>
+        .setName('resetar')
+        .setDescription('Reseta as configurações para o padrão'))
+    .addSubcommand(subcommand => 
       subcommand
         .setName('status')
-        .setDescription('Verificar a configuração atual do reset automático')),
+        .setDescription('Ver a configuração atual do reset')),
   
   execute: handleAsync(async (interaction) => {
-    // Apenas administradores podem alterar configurações
-    if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
-      logger.info(`Usuário sem permissão tentou configurar reset: ${interaction.user.tag} (${interaction.user.id})`);
-      return interaction.reply({
-        content: '❌ Você não tem permissão para alterar as configurações do bot. Apenas administradores podem usar este comando.',
-        ephemeral: true
-      });
-    }
-    
+    const guildId = interaction.guild.id;
     const subcommand = interaction.options.getSubcommand();
     
-    // Subcomando para verificar o status atual
     if (subcommand === 'status') {
-      const resetDay = getSetting('resetDay', 0);
-      const resetHour = getSetting('resetHour', 0);
-      const resetMinute = getSetting('resetMinute', 0);
+      // Get current configuration
+      const resetDay = getSetting(guildId, 'resetDay', 0);
+      const resetHour = getSetting(guildId, 'resetHour', 0);
+      const resetMinute = getSetting(guildId, 'resetMinute', 0);
+      const notificationChannelId = getSetting(guildId, 'notificationChannelId', null);
+      
       const dayName = getDayName(resetDay);
-      
-      return interaction.reply({
-        content: `⚙️ **Configuração de Reset Automático**\n\nA pauta é resetada automaticamente toda **${dayName.pt}** às **${resetHour.toString().padStart(2, '0')}:${resetMinute.toString().padStart(2, '0')}**.\n\nUse \`/configreset dia\` para alterar o dia ou \`/configreset hora\` para alterar o horário.`,
-        ephemeral: false
-      });
-    }
-    
-    // Subcomando para alterar a hora
-    if (subcommand === 'hora') {
-      const resetDay = getSetting('resetDay', 0);
-      const dayName = getDayName(resetDay);
-      const newHour = interaction.options.getInteger('hora');
-      const newMinute = interaction.options.getInteger('minuto');
-      
-      // Atualizar configurações
-      updateSetting('resetHour', newHour);
-      updateSetting('resetMinute', newMinute);
-      
-      // Avisar sobre necessidade de reiniciar o bot
-      logger.info(`Horário do reset alterado para ${newHour}:${newMinute} por ${interaction.user.tag} (${interaction.user.id})`);
-      
-      return interaction.reply({
-        content: `✅ **Horário de Reset Atualizado**\n\nO horário do reset automático foi alterado para **${newHour.toString().padStart(2, '0')}:${newMinute.toString().padStart(2, '0')}**.\n\nA pauta continuará sendo resetada toda **${dayName.pt}** neste novo horário.\n\n⚠️ **Nota:** Para que a alteração tenha efeito, o bot deve ser reiniciado.`,
-        ephemeral: false
-      });
-    }
-    
-    // Subcomando para alterar o dia
-    if (subcommand === 'dia') {
-      // Criar menu de seleção para os dias da semana
-      const selectMenu = new StringSelectMenuBuilder()
-        .setCustomId('select_reset_day')
-        .setPlaceholder('Selecione o dia da semana')
-        .addOptions([
-          { label: 'Domingo', value: '0', description: 'Reset no início da semana' },
-          { label: 'Segunda-feira', value: '1', description: 'Início da semana de trabalho' },
-          { label: 'Terça-feira', value: '2' },
-          { label: 'Quarta-feira', value: '3', description: 'Meio da semana' },
-          { label: 'Quinta-feira', value: '4' },
-          { label: 'Sexta-feira', value: '5', description: 'Fim da semana de trabalho' },
-          { label: 'Sábado', value: '6', description: 'Fim de semana' }
-        ]);
-      
-      const row = new ActionRowBuilder().addComponents(selectMenu);
-      
-      const currentResetDay = getSetting('resetDay', 0);
-      const currentDayName = getDayName(currentResetDay);
-      const resetHour = getSetting('resetHour', 0);
-      const resetMinute = getSetting('resetMinute', 0);
       const formattedTime = `${resetHour.toString().padStart(2, '0')}:${resetMinute.toString().padStart(2, '0')}`;
       
-      // Enviar mensagem com menu de seleção
+      // Create embed for showing status
+      const embed = new EmbedBuilder()
+        .setColor(0x4286f4)
+        .setTitle('⚙️ Configuração de Reset da Pauta')
+        .addFields(
+          { name: 'Dia da Semana', value: dayName, inline: true },
+          { name: 'Horário', value: formattedTime, inline: true },
+          { 
+            name: 'Canal de Notificação', 
+            value: notificationChannelId ? `<#${notificationChannelId}>` : 'Não configurado', 
+            inline: true 
+          }
+        )
+        .setFooter({ text: 'Use /configreset configurar para alterar estas configurações' });
+      
+      return interaction.reply({ embeds: [embed], ephemeral: true });
+    } else if (subcommand === 'resetar') {
+      // Confirm before resetting
+      const confirmButton = new ButtonBuilder()
+        .setCustomId('confirm_reset_settings')
+        .setLabel('Confirmar Reset')
+        .setStyle(ButtonStyle.Danger);
+        
+      const cancelButton = new ButtonBuilder()
+        .setCustomId('cancel_reset_settings')
+        .setLabel('Cancelar')
+        .setStyle(ButtonStyle.Secondary);
+        
+      const row = new ActionRowBuilder().addComponents(confirmButton, cancelButton);
+      
       const response = await interaction.reply({
-        content: `⚙️ **Alterar Dia do Reset**\n\nAtualmente a pauta é resetada toda **${currentDayName.pt}** às **${formattedTime}**.\n\nSelecione o novo dia da semana para o reset automático:`,
+        content: '⚠️ **Atenção**\n\nIsso irá resetar todas as configurações do bot para os valores padrão.\n\nDeseja continuar?',
         components: [row],
         ephemeral: true,
         fetchReply: true
       });
       
-      // Aguardar pela seleção
-      try {
-        const collected = await response.awaitMessageComponent({
-          componentType: ComponentType.StringSelect,
-          time: 60000, // 1 minuto para responder
-        });
+      const collector = response.createMessageComponentCollector({
+        componentType: ComponentType.Button,
+        time: 30000
+      });
+      
+      collector.on('collect', async i => {
+        if (i.user.id !== interaction.user.id) {
+          return i.reply({
+            content: '❌ Estes botões não são para você.',
+            ephemeral: true
+          });
+        }
         
-        const newDay = parseInt(collected.values[0], 10);
-        const newDayName = getDayName(newDay);
+        await i.update({ components: [] });
         
-        // Atualizar configuração
-        updateSetting('resetDay', newDay);
+        if (i.customId === 'cancel_reset_settings') {
+          await i.editReply({
+            content: 'Operação cancelada. As configurações não foram alteradas.',
+            ephemeral: true
+          });
+          return;
+        }
         
-        logger.info(`Dia do reset alterado para ${newDay} (${newDayName.pt}) por ${interaction.user.tag} (${interaction.user.id})`);
-        
-        await collected.update({
-          content: `✅ **Dia de Reset Atualizado**\n\nO dia do reset automático foi alterado para **${newDayName.pt}** às **${formattedTime}**.\n\nA próxima pauta será resetada automaticamente neste novo dia.\n\n⚠️ **Nota:** Para que a alteração tenha efeito, o bot deve ser reiniciado.`,
-          components: [],
-          ephemeral: true
-        });
-        
-        // Anunciar mudança no canal atual
-        await interaction.channel.send({
-          content: `📢 **Aviso: Alteração no Reset da Pauta**\n\n${interaction.user.toString()} alterou o dia do reset automático da pauta para **${newDayName.pt}** às **${formattedTime}**.`
-        });
-        
-      } catch (error) {
-        // Tempo expirado ou erro
-        if (error.code === 'INTERACTION_COLLECTOR_ERROR') {
-          await interaction.editReply({
-            content: '⏱️ Tempo para seleção expirado. Nenhuma alteração foi realizada.',
+        if (i.customId === 'confirm_reset_settings') {
+          const success = resetSettings(guildId);
+          
+          if (success) {
+            logger.info(`Guild ${guildId}: Configurações resetadas por ${interaction.user.tag} (${interaction.user.id})`);
+            
+            await i.editReply({
+              content: '✅ Todas as configurações foram resetadas para os valores padrão.',
+              ephemeral: true
+            });
+          } else {
+            await i.editReply({
+              content: '❌ Ocorreu um erro ao resetar as configurações.',
+              ephemeral: true
+            });
+          }
+        }
+      });
+      
+      collector.on('end', collected => {
+        if (collected.size === 0) {
+          interaction.editReply({
+            content: '⏱️ Tempo esgotado. Nenhuma alteração foi realizada.',
             components: [],
             ephemeral: true
           });
-        } else {
-          throw error; // Deixe o gerenciador de erros globais lidar com isso
         }
-      }
+      });
+    } else if (subcommand === 'configurar') {
+      // Create day selection menu
+      const daySelect = new StringSelectMenuBuilder()
+        .setCustomId('reset_day')
+        .setPlaceholder('Selecione o dia da semana')
+        .addOptions([
+          new StringSelectMenuOptionBuilder()
+            .setLabel('Domingo')
+            .setValue('0')
+            .setDescription('Reset ocorre todo domingo'),
+          new StringSelectMenuOptionBuilder()
+            .setLabel('Segunda-feira')
+            .setValue('1')
+            .setDescription('Reset ocorre toda segunda-feira'),
+          new StringSelectMenuOptionBuilder()
+            .setLabel('Terça-feira')
+            .setValue('2')
+            .setDescription('Reset ocorre toda terça-feira'),
+          new StringSelectMenuOptionBuilder()
+            .setLabel('Quarta-feira')
+            .setValue('3')
+            .setDescription('Reset ocorre toda quarta-feira'),
+          new StringSelectMenuOptionBuilder()
+            .setLabel('Quinta-feira')
+            .setValue('4')
+            .setDescription('Reset ocorre toda quinta-feira'),
+          new StringSelectMenuOptionBuilder()
+            .setLabel('Sexta-feira')
+            .setValue('5')
+            .setDescription('Reset ocorre toda sexta-feira'),
+          new StringSelectMenuOptionBuilder()
+            .setLabel('Sábado')
+            .setValue('6')
+            .setDescription('Reset ocorre todo sábado')
+        ]);
+      
+      // Create hour selection menu
+      const hourSelect = new StringSelectMenuBuilder()
+        .setCustomId('reset_hour')
+        .setPlaceholder('Selecione a hora')
+        .addOptions(
+          Array.from({ length: 24 }, (_, i) => 
+            new StringSelectMenuOptionBuilder()
+              .setLabel(`${i}:00`)
+              .setValue(i.toString())
+              .setDescription(`Reset ocorre às ${i}:00`)
+          )
+        );
+      
+      const dayRow = new ActionRowBuilder().addComponents(daySelect);
+      const hourRow = new ActionRowBuilder().addComponents(hourSelect);
+      
+      const response = await interaction.reply({
+        content: '⚙️ **Configuração de Reset**\n\nSelecione o dia da semana e a hora em que a pauta será resetada automaticamente.',
+        components: [dayRow, hourRow],
+        ephemeral: true,
+        fetchReply: true
+      });
+      
+      // Object to store selections
+      const selections = {
+        day: null,
+        hour: null
+      };
+      
+      // Check if both day and hour were selected
+      const checkComplete = async (i) => {
+        if (selections.day !== null && selections.hour !== null) {
+          const dayName = getDayName(parseInt(selections.day));
+          
+          try {
+            await i.update({
+              content: `✅ **Configuração Completa**\n\nA pauta será resetada todo(a) **${dayName}** às **${selections.hour}:00**.\n\nEsta configuração é específica para este servidor.`,
+              components: [],
+              ephemeral: true
+            });
+          } catch (error) {
+            if (error.code !== 'InteractionAlreadyReplied') {
+              throw error;
+            }
+            
+            // If already replied, use editReply instead
+            await i.editReply({
+              content: `✅ **Configuração Completa**\n\nA pauta será resetada todo(a) **${dayName}** às **${selections.hour}:00**.\n\nEsta configuração é específica para este servidor.`,
+              components: [],
+              ephemeral: true
+            });
+          }
+          
+          // Update settings for this guild
+          updateSetting(guildId, 'resetDay', parseInt(selections.day));
+          updateSetting(guildId, 'resetHour', parseInt(selections.hour));
+          updateSetting(guildId, 'resetMinute', 0);
+          
+          logger.info(`Guild ${guildId}: Configuração de reset atualizada por ${interaction.user.tag} (${interaction.user.id}): dia ${selections.day}, hora ${selections.hour}`);
+        }
+      };
+      
+      // Collector for components
+      const collector = response.createMessageComponentCollector({
+        componentType: ComponentType.StringSelect,
+        time: 60000 // 1 minuto para selecionar
+      });
+      
+      collector.on('collect', async i => {
+        if (i.user.id !== interaction.user.id) {
+          return i.reply({
+            content: '❌ Estes menus não são para você.',
+            ephemeral: true
+          });
+        }
+        
+        if (i.customId === 'reset_day') {
+          selections.day = i.values[0];
+          await i.update({
+            content: `⚙️ **Configuração de Reset**\n\nDia selecionado: **${getDayName(parseInt(selections.day))}**\n\n${selections.hour !== null ? `Hora selecionada: **${selections.hour}:00**` : 'Agora selecione a hora.'}`,
+            components: [dayRow, hourRow],
+            ephemeral: true
+          });
+        } else if (i.customId === 'reset_hour') {
+          selections.hour = i.values[0];
+          await i.update({
+            content: `⚙️ **Configuração de Reset**\n\n${selections.day !== null ? `Dia selecionado: **${getDayName(parseInt(selections.day))}**` : 'Selecione um dia da semana.'}\n\nHora selecionada: **${selections.hour}:00**`,
+            components: [dayRow, hourRow],
+            ephemeral: true
+          });
+        }
+        
+        await checkComplete(i);
+      });
+      
+      collector.on('end', collected => {
+        if (collected.size === 0 || (selections.day === null || selections.hour === null)) {
+          interaction.editReply({
+            content: '⏱️ Tempo esgotado ou configuração incompleta. Nenhuma alteração foi realizada.',
+            components: [],
+            ephemeral: true
+          });
+        }
+      });
     }
   })
 };

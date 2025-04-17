@@ -1,5 +1,12 @@
 {
   "resetDay": 5,
   "resetHour": 0,
-  "resetMinute": 0
+  "resetMinute": 0,
+  "995855568390590535": {
+    "resetDay": 4,
+    "resetHour": 15,
+    "resetMinute": 0,
+    "notificationChannelId": null,
+    "language": "pt-BR"
+  }
 }

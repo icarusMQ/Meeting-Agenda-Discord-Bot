@@ -1,253 +1,357 @@
-// src/utils/agenda.js
 /**
- * Utilitário de gerenciamento de pautas e sugestões para reuniões
- * Armazenamento em memória, considere migrar para banco de dados em produção
+ * Guild-specific agenda management
  */
 
+const fs = require('fs');
+const path = require('path');
 const logger = require('./logger');
 
-// Store agenda items
-let agenda = [];
-// Store pending suggestions
-let suggestions = [];
-// Counter for suggestion IDs
-let nextSuggestionId = 1;
-// Store authorized users (users who can approve suggestions)
-let authorizedUsers = [];
-// Store historical agendas
-let agendaHistory = [];
+// Path to store data
+const dataDir = path.join(__dirname, '../../data');
+const agendaDataDir = path.join(dataDir, 'guilds');
+
+// In-memory data storage for all guilds
+const guildsData = new Map();
 
 /**
- * Add a new suggestion to the pending list
+ * Initialize data structure for a guild if it doesn't exist
+ * @param {string} guildId - The Discord guild ID
+ */
+function initGuildData(guildId) {
+  if (!guildsData.has(guildId)) {
+    guildsData.set(guildId, {
+      agenda: [],
+      suggestions: [],
+      authorizedUsers: [],
+      agendaHistory: [],
+      nextAgendaId: 1,
+      nextSuggestionId: 1
+    });
+    saveGuildData(guildId);
+  }
+  return guildsData.get(guildId);
+}
+
+/**
+ * Save guild data to file
+ * @param {string} guildId - The Discord guild ID
+ */
+function saveGuildData(guildId) {
+  if (!guildsData.has(guildId)) return false;
+  
+  try {
+    // Create directories if they don't exist
+    if (!fs.existsSync(agendaDataDir)) {
+      fs.mkdirSync(agendaDataDir, { recursive: true });
+    }
+    
+    const filePath = path.join(agendaDataDir, `${guildId}.json`);
+    fs.writeFileSync(filePath, JSON.stringify(guildsData.get(guildId), null, 2), 'utf8');
+    return true;
+  } catch (error) {
+    logger.error(`Error saving data for guild ${guildId}: ${error.message}`);
+    return false;
+  }
+}
+
+/**
+ * Load guild data from file
+ * @param {string} guildId - The Discord guild ID
+ */
+function loadGuildData(guildId) {
+  try {
+    const filePath = path.join(agendaDataDir, `${guildId}.json`);
+    
+    if (fs.existsSync(filePath)) {
+      const data = fs.readFileSync(filePath, 'utf8');
+      guildsData.set(guildId, JSON.parse(data));
+      return true;
+    } else {
+      // Initialize new guild data if file doesn't exist
+      initGuildData(guildId);
+      return true;
+    }
+  } catch (error) {
+    logger.error(`Error loading data for guild ${guildId}: ${error.message}`);
+    initGuildData(guildId);
+    return false;
+  }
+}
+
+/**
+ * Get the current agenda items for a guild
+ * @param {string} guildId - The Discord guild ID
+ * @returns {Array} List of agenda items
+ */
+function getAgenda(guildId) {
+  ensureGuildData(guildId);
+  return guildsData.get(guildId).agenda;
+}
+
+/**
+ * Get the list of suggestions for a guild
+ * @param {string} guildId - The Discord guild ID
+ * @returns {Array} List of suggestions
+ */
+function getSuggestions(guildId) {
+  ensureGuildData(guildId);
+  return guildsData.get(guildId).suggestions;
+}
+
+/**
+ * Get the authorized users for a guild
+ * @param {string} guildId - The Discord guild ID
+ * @returns {Array} List of authorized users
+ */
+function getAuthorizedUsers(guildId) {
+  ensureGuildData(guildId);
+  return guildsData.get(guildId).authorizedUsers;
+}
+
+/**
+ * Get the agenda history for a guild
+ * @param {string} guildId - The Discord guild ID
+ * @returns {Array} List of historical agenda entries
+ */
+function getAgendaHistory(guildId) {
+  ensureGuildData(guildId);
+  return guildsData.get(guildId).agendaHistory;
+}
+
+/**
+ * Check if a user is authorized
+ * @param {string} guildId - The Discord guild ID
+ * @param {string} userId - The Discord user ID
+ * @returns {boolean} True if user is authorized
+ */
+function isUserAuthorized(guildId, userId) {
+  ensureGuildData(guildId);
+  const authorizedUsers = guildsData.get(guildId).authorizedUsers;
+  return authorizedUsers.some(user => user.id === userId);
+}
+
+/**
+ * Add a user to the authorized list
+ * @param {string} guildId - The Discord guild ID
+ * @param {string} userId - The Discord user ID
+ * @param {string} username - The Discord username
+ * @returns {boolean} True if user was added successfully
+ */
+function addAuthorizedUser(guildId, userId, username) {
+  ensureGuildData(guildId);
+  const guildData = guildsData.get(guildId);
+  
+  // Check if already authorized
+  if (isUserAuthorized(guildId, userId)) {
+    return false;
+  }
+  
+  guildData.authorizedUsers.push({
+    id: userId,
+    username: username,
+    addedAt: new Date().toISOString()
+  });
+  
+  return saveGuildData(guildId);
+}
+
+/**
+ * Remove a user from the authorized list
+ * @param {string} guildId - The Discord guild ID
+ * @param {string} userId - The Discord user ID
+ * @returns {boolean} True if user was removed successfully
+ */
+function removeAuthorizedUser(guildId, userId) {
+  ensureGuildData(guildId);
+  const guildData = guildsData.get(guildId);
+  
+  const initialLength = guildData.authorizedUsers.length;
+  guildData.authorizedUsers = guildData.authorizedUsers.filter(user => user.id !== userId);
+  
+  if (guildData.authorizedUsers.length < initialLength) {
+    return saveGuildData(guildId);
+  }
+  
+  return false;
+}
+
+/**
+ * Add a suggestion to the list
+ * @param {string} guildId - The Discord guild ID
  * @param {string} text - The suggestion text
- * @param {string} userId - The user ID who suggested
- * @param {string} username - The username who suggested
+ * @param {string} userId - The Discord user ID
+ * @param {string} username - The Discord username
  * @returns {Object} The created suggestion
  */
-function addSuggestion(text, userId, username) {
+function addSuggestion(guildId, text, userId, username) {
+  ensureGuildData(guildId);
+  const guildData = guildsData.get(guildId);
+  
   const suggestion = {
-    id: nextSuggestionId++,
-    text,
-    userId,
-    username,
-    timestamp: new Date()
+    id: guildData.nextSuggestionId++,
+    text: text,
+    userId: userId,
+    username: username,
+    createdAt: new Date().toISOString()
   };
   
-  suggestions.push(suggestion);
-  logger.info(`Nova sugestão #${suggestion.id} adicionada por ${username} (${userId}): "${text.substring(0, 50)}${text.length > 50 ? '...' : ''}"`);
+  guildData.suggestions.push(suggestion);
+  saveGuildData(guildId);
+  
   return suggestion;
 }
 
 /**
  * Approve a suggestion and add it to the agenda
- * @param {number} id - The suggestion ID to approve
- * @returns {Object|null} The approved suggestion or null if not found
+ * @param {string} guildId - The Discord guild ID
+ * @param {number} suggestionId - The suggestion ID
+ * @returns {Object|null} The approved item or null if not found
  */
-function approveSuggestion(id) {
-  const index = suggestions.findIndex(s => s.id === id);
+function approveSuggestion(guildId, suggestionId) {
+  ensureGuildData(guildId);
+  const guildData = guildsData.get(guildId);
   
-  if (index === -1) {
-    logger.warn(`Tentativa de aprovar sugestão inexistente com ID ${id}`);
+  // Find the suggestion
+  const suggestionIndex = guildData.suggestions.findIndex(s => s.id === suggestionId);
+  if (suggestionIndex === -1) {
     return null;
   }
   
-  const suggestion = suggestions[index];
+  const suggestion = guildData.suggestions[suggestionIndex];
   
   // Add to agenda
   const agendaItem = {
-    id: agenda.length + 1,
+    id: guildData.nextAgendaId++,
     text: suggestion.text,
     suggestedBy: suggestion.username,
-    suggestedById: suggestion.userId,
-    approvedAt: new Date()
+    userId: suggestion.userId,
+    approvedAt: new Date().toISOString(),
+    suggestionId: suggestion.id
   };
   
-  agenda.push(agendaItem);
+  guildData.agenda.push(agendaItem);
   
-  // Remove from pending suggestions
-  suggestions.splice(index, 1);
+  // Remove from suggestions
+  guildData.suggestions.splice(suggestionIndex, 1);
   
-  logger.info(`Sugestão #${id} aprovada e adicionada à pauta como item #${agendaItem.id}`);
-  return suggestion;
+  saveGuildData(guildId);
+  
+  return agendaItem;
 }
 
 /**
- * Get all approved agenda items
- * @returns {Array} The approved agenda items
+ * Reset the agenda and move current items to history
+ * @param {string} guildId - The Discord guild ID
+ * @returns {boolean} True if successful
  */
-function getAgenda() {
-  return [...agenda];
-}
-
-/**
- * Get all pending suggestions
- * @returns {Array} The pending suggestions
- */
-function getSuggestions() {
-  return [...suggestions];
-}
-
-/**
- * Reset the agenda (e.g., weekly) and save to history
- * @returns {boolean} True if reset was successful
- */
-function resetAgenda() {
-  if (agenda.length > 0) {
-    // Save current agenda to history before resetting
-    agendaHistory.push({
-      items: [...agenda],
-      archivedAt: new Date(),
-      weekNumber: getWeekNumber(new Date())
-    });
+function resetAgenda(guildId) {
+  ensureGuildData(guildId);
+  const guildData = guildsData.get(guildId);
+  
+  // Move current agenda to history
+  if (guildData.agenda.length > 0) {
+    const historyEntry = {
+      items: [...guildData.agenda],
+      archivedAt: new Date().toISOString(),
+      weekNumber: getWeekNumber()
+    };
     
-    logger.info(`Pauta resetada. ${agenda.length} itens movidos para o histórico.`);
+    guildData.agendaHistory.push(historyEntry);
+    guildData.agenda = [];
     
-    // Clean up old history (older than 1 month)
-    const oldHistoryCount = agendaHistory.length;
-    cleanupOldHistory();
-    
-    if (oldHistoryCount > agendaHistory.length) {
-      logger.info(`Limpeza automática do histórico: ${oldHistoryCount - agendaHistory.length} pautas antigas removidas.`);
-    }
-    
-    agenda = [];
-    return true;
-  } else {
-    logger.info(`Pauta resetada, mas não havia itens para salvar no histórico.`);
-    agenda = [];
-    return true;
+    return saveGuildData(guildId);
   }
-}
-
-/**
- * Reset suggestions
- * @returns {boolean} True if reset was successful
- */
-function resetSuggestions() {
-  const count = suggestions.length;
-  suggestions = [];
-  nextSuggestionId = 1;
   
-  logger.info(`Sugestões resetadas. ${count} sugestões pendentes foram removidas.`);
   return true;
 }
 
 /**
- * Add a user to the authorized users list
- * @param {string} userId - The Discord user ID to authorize
- * @param {string} username - The username for display
- * @returns {boolean} True if user was added, false if already authorized
+ * Reset all suggestions for a guild
+ * @param {string} guildId - The Discord guild ID
+ * @returns {boolean} True if successful
  */
-function addAuthorizedUser(userId, username) {
-  if (authorizedUsers.some(user => user.id === userId)) {
-    logger.info(`Tentativa de autorizar usuário ${username} (${userId}) que já estava autorizado.`);
-    return false;
-  }
+function resetSuggestions(guildId) {
+  ensureGuildData(guildId);
+  const guildData = guildsData.get(guildId);
   
-  authorizedUsers.push({
-    id: userId,
-    username,
-    addedAt: new Date()
-  });
-  
-  logger.info(`Usuário ${username} (${userId}) foi autorizado.`);
-  return true;
+  guildData.suggestions = [];
+  return saveGuildData(guildId);
 }
 
 /**
- * Remove a user from the authorized users list
- * @param {string} userId - The Discord user ID to remove
- * @returns {boolean} True if user was removed, false if not found
+ * Clear the agenda history for a guild
+ * @param {string} guildId - The Discord guild ID
+ * @returns {boolean} True if successful
  */
-function removeAuthorizedUser(userId) {
-  const initialLength = authorizedUsers.length;
-  const userToRemove = authorizedUsers.find(user => user.id === userId);
+function clearAgendaHistory(guildId) {
+  ensureGuildData(guildId);
+  const guildData = guildsData.get(guildId);
   
-  authorizedUsers = authorizedUsers.filter(user => user.id !== userId);
-  
-  if (authorizedUsers.length < initialLength) {
-    logger.info(`Usuário ${userToRemove ? userToRemove.username : userId} foi desautorizado.`);
-    return true;
-  } else {
-    logger.warn(`Tentativa de desautorizar usuário ${userId} que não estava na lista.`);
-    return false;
-  }
+  guildData.agendaHistory = [];
+  return saveGuildData(guildId);
 }
 
 /**
- * Check if a user is authorized to approve suggestions
- * @param {string} userId - The Discord user ID to check
- * @returns {boolean} True if user is authorized
+ * Get the current week number
+ * @returns {number} Week number (1-53)
  */
-function isUserAuthorized(userId) {
-  return authorizedUsers.some(user => user.id === userId);
-}
-
-/**
- * Get all authorized users
- * @returns {Array} The list of authorized users
- */
-function getAuthorizedUsers() {
-  return [...authorizedUsers];
-}
-
-/**
- * Get the week number for a date
- * @param {Date} date - The date to get the week number for
- * @returns {number} The week number
- */
-function getWeekNumber(date) {
-  const firstDayOfYear = new Date(date.getFullYear(), 0, 1);
-  const pastDaysOfYear = (date - firstDayOfYear) / 86400000;
+function getWeekNumber() {
+  const now = new Date();
+  const firstDayOfYear = new Date(now.getFullYear(), 0, 1);
+  const pastDaysOfYear = (now - firstDayOfYear) / 86400000;
   return Math.ceil((pastDaysOfYear + firstDayOfYear.getDay() + 1) / 7);
 }
 
 /**
- * Clean up history items older than 1 month
+ * Ensure guild data is loaded
+ * @param {string} guildId - The Discord guild ID
  */
-function cleanupOldHistory() {
-  const oneMonthAgo = new Date();
-  oneMonthAgo.setMonth(oneMonthAgo.getMonth() - 1);
-  
-  const oldCount = agendaHistory.length;
-  agendaHistory = agendaHistory.filter(entry => entry.archivedAt > oneMonthAgo);
-  
-  if (oldCount > agendaHistory.length) {
-    logger.debug(`Limpeza automática do histórico removeu ${oldCount - agendaHistory.length} entradas antigas.`);
+function ensureGuildData(guildId) {
+  if (!guildsData.has(guildId)) {
+    loadGuildData(guildId);
+  }
+  return guildsData.get(guildId);
+}
+
+/**
+ * Load all guild data during startup
+ */
+function loadAllGuildData() {
+  try {
+    // Create data directory if it doesn't exist
+    if (!fs.existsSync(agendaDataDir)) {
+      fs.mkdirSync(agendaDataDir, { recursive: true });
+      return;
+    }
+    
+    // Read all guild files and load data
+    const files = fs.readdirSync(agendaDataDir);
+    for (const file of files) {
+      if (file.endsWith('.json')) {
+        const guildId = file.replace('.json', '');
+        loadGuildData(guildId);
+        logger.info(`Loaded data for guild ${guildId}`);
+      }
+    }
+  } catch (error) {
+    logger.error(`Error loading guild data: ${error.message}`);
   }
 }
 
-/**
- * Get the agenda history
- * @returns {Array} Historical agenda entries
- */
-function getAgendaHistory() {
-  return [...agendaHistory];
-}
-
-/**
- * Manually clear the entire agenda history
- * @returns {boolean} True if operation was successful
- */
-function clearAgendaHistory() {
-  const count = agendaHistory.length;
-  agendaHistory = [];
-  
-  logger.info(`Todo o histórico de pautas foi limpo. ${count} pautas antigas foram removidas.`);
-  return true;
-}
+// Load all guild data on startup
+loadAllGuildData();
 
 module.exports = {
-  addSuggestion,
-  approveSuggestion,
   getAgenda,
   getSuggestions,
-  resetAgenda,
-  resetSuggestions,
-  addAuthorizedUser,
-  removeAuthorizedUser,
-  isUserAuthorized,
   getAuthorizedUsers,
   getAgendaHistory,
+  isUserAuthorized,
+  addAuthorizedUser,
+  removeAuthorizedUser,
+  addSuggestion,
+  approveSuggestion,
+  resetAgenda,
+  resetSuggestions,
   clearAgendaHistory
 };

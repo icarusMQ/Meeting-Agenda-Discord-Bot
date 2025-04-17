@@ -22,6 +22,9 @@ const client = new Client({
 // Create a Collection to store commands
 client.commands = new Collection();
 
+// Storage for guild-specific reset jobs
+const resetJobs = new Map();
+
 // Dynamically read command files
 const commandsPath = path.join(__dirname, 'commands');
 logger.info(`Carregando comandos do diretório: ${commandsPath}`);
@@ -55,57 +58,80 @@ fs.readdirSync(eventsPath).forEach(file => {
   }
 });
 
-// Function to schedule the agenda reset job
-let resetJob = null;
-
-function scheduleAgendaReset() {
-  // Cancel any existing job
-  if (resetJob) {
-    resetJob.stop();
+/**
+ * Schedule the agenda reset job for a specific guild
+ * @param {string} guildId - The guild ID to schedule for
+ */
+function scheduleAgendaReset(guildId) {
+  // Cancel any existing job for this guild
+  if (resetJobs.has(guildId)) {
+    resetJobs.get(guildId).stop();
+    resetJobs.delete(guildId);
   }
   
-  // Get the cron schedule from settings
-  const cronSchedule = getResetCronExpression();
-  const resetDay = getSetting('resetDay', 0);
-  const resetHour = getSetting('resetHour', 0);
-  const resetMinute = getSetting('resetMinute', 0);
+  // Get the cron schedule from guild settings
+  const cronSchedule = getResetCronExpression(guildId);
+  const resetDay = getSetting(guildId, 'resetDay', 0);
+  const resetHour = getSetting(guildId, 'resetHour', 0);
+  const resetMinute = getSetting(guildId, 'resetMinute', 0);
   const dayName = getDayName(resetDay);
   
   // Schedule the new job
-  resetJob = cron.schedule(cronSchedule, () => {
-    const formattedTime = `${resetHour.toString().padStart(2, '0')}:${resetMinute.toString().padStart(2, '0')}`;
-    
-    logger.info(`Executando reset agendado da pauta (${dayName.pt} às ${formattedTime})`);
-    try {
-      resetAgenda();
+  try {
+    const job = cron.schedule(cronSchedule, () => {
+      const formattedTime = `${resetHour.toString().padStart(2, '0')}:${resetMinute.toString().padStart(2, '0')}`;
       
-      // Notify a specific channel about the reset if configured
-      const notificationChannelId = process.env.NOTIFICATION_CHANNEL_ID;
-      if (notificationChannelId) {
-        try {
-          const channel = client.channels.cache.get(notificationChannelId);
-          if (channel) {
-            channel.send('📢 **Aviso Automático**: A pauta da semana foi resetada. Uma nova pauta está disponível!');
-            logger.info(`Notificação de reset enviada para o canal ${notificationChannelId}`);
-          } else {
-            logger.warn(`Canal de notificação ${notificationChannelId} não encontrado`);
+      logger.info(`Guild ${guildId}: Executando reset agendado da pauta (${dayName.pt} às ${formattedTime})`);
+      
+      try {
+        resetAgenda(guildId);
+        
+        // Notify the guild's notification channel
+        const guild = client.guilds.cache.get(guildId);
+        if (guild) {
+          const notificationChannelId = process.env.NOTIFICATION_CHANNEL_ID;
+          if (notificationChannelId) {
+            try {
+              const channel = guild.channels.cache.get(notificationChannelId);
+              if (channel) {
+                channel.send('📢 **Aviso Automático**: A pauta da semana foi resetada. Uma nova pauta está disponível!');
+                logger.info(`Guild ${guildId}: Notificação de reset enviada para o canal ${notificationChannelId}`);
+              } else {
+                logger.warn(`Guild ${guildId}: Canal de notificação ${notificationChannelId} não encontrado`);
+              }
+            } catch (error) {
+              logger.error(`Guild ${guildId}: Erro ao enviar notificação sobre o reset da pauta:`, error);
+            }
           }
-        } catch (error) {
-          logger.error('Erro ao enviar notificação sobre o reset da pauta:', error);
+        } else {
+          logger.warn(`Guild ${guildId}: Guild não encontrada ao executar reset agendado`);
         }
+      } catch (error) {
+        logger.error(`Guild ${guildId}: Erro ao executar reset agendado da pauta:`, error);
       }
-    } catch (error) {
-      logger.error('Erro ao executar reset agendado da pauta:', error);
-    }
-  });
-  
-  logger.info(`Agendamento de reset configurado para ${dayName.pt} às ${resetHour.toString().padStart(2, '0')}:${resetMinute.toString().padStart(2, '0')}`);
+    });
+    
+    resetJobs.set(guildId, job);
+    logger.info(`Guild ${guildId}: Agendamento de reset configurado para ${dayName.pt} às ${resetHour.toString().padStart(2, '0')}:${resetMinute.toString().padStart(2, '0')}`);
+  } catch (error) {
+    logger.error(`Guild ${guildId}: Erro ao agendar reset:`, error);
+  }
 }
 
-// Initial scheduling of the agenda reset
-scheduleAgendaReset();
+// When the bot is ready, schedule reset jobs for all guilds
+client.once('ready', () => {
+  client.guilds.cache.forEach(guild => {
+    scheduleAgendaReset(guild.id);
+  });
+});
 
-// Store the scheduleAgendaReset function in the client for access from commands
+// Handle guild join event to set up reset jobs for new guilds
+client.on('guildCreate', (guild) => {
+  logger.info(`Bot adicionado a um novo servidor: ${guild.name} (${guild.id})`);
+  scheduleAgendaReset(guild.id);
+});
+
+// Make the scheduleAgendaReset function available to commands
 client.scheduleAgendaReset = scheduleAgendaReset;
 
 // Listener para erros de conexão

@@ -1,7 +1,7 @@
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 const { handleAsync } = require('../utils/errorHandler');
 const logger = require('../utils/logger');
-const { getSetting, getDayName } = require('../utils/settings');
+const settings = require('../utils/settings');
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -9,11 +9,23 @@ module.exports = {
     .setDescription('Exibe informações de ajuda sobre o bot e seus comandos'),
   
   execute: handleAsync(async (interaction) => {
+    // Get guild ID from the interaction
+    const guildId = interaction.guildId;
+    
     // Obter informações do reset atual para exibir no rodapé
-    const resetDay = getSetting('resetDay', 0);
-    const resetHour = getSetting('resetHour', 0);
-    const resetMinute = getSetting('resetMinute', 0);
-    const dayName = getDayName(resetDay);
+    const resetDay = settings.getSetting(guildId, 'resetDay', 0);
+    const resetHour = settings.getSetting(guildId, 'resetHour', 0);
+    const resetMinute = settings.getSetting(guildId, 'resetMinute', 0);
+    
+    // Get day name safely
+    let dayName = 'Domingo'; // Default
+    try {
+      const dayObj = settings.getDayName(resetDay);
+      dayName = dayObj.pt;
+    } catch (error) {
+      logger.error(`Error getting day name for day ${resetDay}: ${error.message}`);
+    }
+    
     const formattedTime = `${resetHour.toString().padStart(2, '0')}:${resetMinute.toString().padStart(2, '0')}`;
     
     const embed = new EmbedBuilder()
@@ -52,7 +64,7 @@ module.exports = {
         }
       )
       .setFooter({ 
-        text: `A pauta é automaticamente resetada toda ${dayName.pt} às ${formattedTime}` 
+        text: `A pauta é automaticamente resetada toda ${dayName} às ${formattedTime}` 
       });
     
     await interaction.reply({
