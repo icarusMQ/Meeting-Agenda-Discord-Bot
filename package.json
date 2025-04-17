@@ -1,0 +1,23 @@
+{
+  "name": "meeting-agenda-discord-bot",
+  "version": "1.0.0",
+  "description": "> Gerencie sugestões de pauta, aprovações e deploy contínuo com este bot de Discord.",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "deploy-commands": "node scripts/deploy-commands.js",
+    "start": "node src/index.js",
+    "dev": "nodemon src/index.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "discord.js": "^14.18.0",
+    "dotenv": "^16.5.0"
+  },
+  "devDependencies": {
+    "eslint": "^9.24.0",
+    "nodemon": "^3.1.9"
+  }
+}
