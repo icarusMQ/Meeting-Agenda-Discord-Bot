@@ -1,6 +1,6 @@
 # Discord Meeting Agenda Manager
 
-> Gerencie sugestões de pauta, aprovações e deploy contínuo com este bot de Discord.
+> Gerencie sugestões de pauta, aprovações e resetamento automático com este bot de Discord.
 
 ---
 
@@ -10,14 +10,16 @@
 
 This project implements a Discord bot that:
 
-1. Automatically generates a **weekly agenda** (reset every Sunday at midnight).
+1. Automatically generates a **weekly agenda** with configurable reset schedule.
 2. Allows members to submit agenda suggestions via `/sugerir`.
 3. Lets authorized users approve suggestions via `/aprovar`.
 4. Displays the current agenda with approved items via `/pauta`.
 5. Maintains a history of previous agendas via `/historico`.
 6. Allows administrators to manage authorized users via `/autorizar` and `/desautorizar`.
-7. Runs 24/7 in a Docker container, easily deployable on cloud platforms.
+7. Runs 24/7 in a Docker container, easily deployable on cloud platforms like DigitalOcean.
 8. Includes comprehensive logging and error handling.
+9. Provides health check endpoints for container monitoring.
+10. Supports custom reset scheduling for each guild.
 
 ---
 
@@ -29,10 +31,12 @@ This project implements a Discord bot that:
 - **View history**: `/historico listar`
 - **Manage authorized users**: `/autorizar`, `/desautorizar`, `/autorizados`
 - **Reset agenda**: `/resetar` (with confirmation)
-- **Auto-reset**: Weekly cron job resetting the agenda
+- **Configurable auto-reset**: Set custom day and time for agenda reset via `/configreset`
+- **Health checks**: HTTP server for container monitoring
 - **Logging & error handling**: Comprehensive event tracking
 - **Confirmation dialogs**: For destructive operations
 - **Docker deployment**: Lightweight Node.js image
+- **Guild-specific settings**: Each Discord server can have different configurations
 
 ---
 
@@ -52,11 +56,16 @@ meeting-agenda-discord-bot/
 ├── src/
 │   ├── commands/         # Command handlers (autorizar, pauta, resetar, etc.)
 │   ├── events/           # Event listeners (ready, interactionCreate)
-│   ├── utils/            # Utilities (agenda, logger, errorHandler)
+│   ├── utils/            # Utilities (agenda, logger, errorHandler, settings)
 │   └── index.js          # Bot entrypoint
 ├── scripts/
 │   └── deploy-commands.js # Register slash commands
+├── data/
+│   ├── settings.json     # Global settings
+│   └── guilds/           # Guild-specific data
 ├── logs/                 # Application logs (created on first run)
+├── .github/
+│   └── workflows/        # CI pipeline configuration
 ├── .env.example          # Sample environment variables file
 ├── .gitignore
 ├── Dockerfile            # Docker image configuration
@@ -78,6 +87,7 @@ meeting-agenda-discord-bot/
    NOTIFICATION_CHANNEL_ID=channel_for_automated_notifications
    SUGGESTION_CHANNEL_ID=channel_to_show_new_suggestions
    DEBUG=false
+   PORT=8080
    ```
 3. In the Discord Developer Portal, enable required **Intents** (Message Content, Server Members, etc.)
 4. Install dependencies:
@@ -115,7 +125,7 @@ docker build -t meeting-agenda-bot:latest .
 
 #### Run container
 ```bash
-docker run --env-file .env meeting-agenda-bot:latest
+docker run -p 8080:8080 --env-file .env meeting-agenda-bot:latest
 ```
 
 ---
@@ -132,14 +142,36 @@ docker run --env-file .env meeting-agenda-bot:latest
 | `/autorizados` | List authorized users | Authorized users |
 | `/autorizar` | Authorize a user | Admins/Leaders |
 | `/desautorizar` | Remove authorization | Admins/Leaders |
-| `/resetar` | Reset the agenda | Admins |
+| `/resetar` | Reset the agenda or suggestions | Admins |
 | `/historico limpar` | Clear agenda history | Admins |
+| `/configreset` | Configure reset schedule | Admins |
+
+---
+
+### 🔄 Automatic Reset
+
+The bot can automatically reset the agenda on a configurable schedule:
+
+- Each Discord server can set its own reset day and time
+- Default: Reset occurs every Sunday at 00:00
+- Use `/configreset configurar` to change the schedule
+- Use `/configreset status` to view the current configuration
+
+---
+
+### 🏥 Health Checks
+
+For cloud deployments, the bot includes a health check endpoint:
+
+- HTTP server runs on port 8080 (configurable via PORT env variable)
+- GET /health endpoint returns 200 OK when the bot is running
+- Suitable for container monitoring in platforms like DigitalOcean
 
 ---
 
 ## 🇧🇷 Português
 
-> Gerencie sugestões de pauta, aprovações e deploy contínuo com este bot de Discord.
+> Gerencie sugestões de pauta, aprovações e resetamento automático com este bot de Discord.
 
 ---
 
@@ -147,14 +179,16 @@ docker run --env-file .env meeting-agenda-bot:latest
 
 Este projeto implementa um bot para Discord que:
 
-1. Gera uma **pauta semanal** automaticamente (resetada todo domingo à meia-noite).
+1. Gera uma **pauta semanal** automaticamente com agendamento configurável.
 2. Permite que membros submetam sugestões de pauta via `/sugerir`.
 3. Permite que usuários autorizados aprovem sugestões via `/aprovar`.
 4. Exibe a pauta atual com itens aprovados via `/pauta`.
 5. Mantém um histórico de pautas anteriores via `/historico`.
 6. Permite que administradores gerenciem usuários autorizados via `/autorizar` e `/desautorizar`.
-7. Roda 24/7 em um contêiner Docker, facilmente implantável em plataformas cloud.
+7. Roda 24/7 em um contêiner Docker, facilmente implantável em plataformas cloud como DigitalOcean.
 8. Inclui sistema completo de logs e tratamento de erros.
+9. Fornece endpoints de verificação de saúde para monitoramento de contêineres.
+10. Suporta agendamento de reset personalizado para cada servidor.
 
 ---
 
@@ -166,10 +200,12 @@ Este projeto implementa um bot para Discord que:
 - **Visualização do histórico**: `/historico listar`
 - **Gerenciamento de usuários autorizados**: `/autorizar`, `/desautorizar`, `/autorizados`
 - **Reset da pauta**: `/resetar` (com confirmação)
-- **Reset automático**: Agendamento semanal para resetar a pauta
+- **Auto-reset configurável**: Defina dia e hora personalizados para reset da pauta via `/configreset`
+- **Verificações de saúde**: Servidor HTTP para monitoramento de contêineres
 - **Logs e tratamento de erros**: Rastreamento abrangente de eventos
 - **Diálogos de confirmação**: Para operações destrutivas
 - **Deploy via Docker**: Imagem leve baseada em Node.js
+- **Configurações específicas por servidor**: Cada servidor Discord pode ter diferentes configurações
 
 ---
 
@@ -189,11 +225,16 @@ meeting-agenda-discord-bot/
 ├── src/
 │   ├── commands/         # Handlers de comandos (autorizar, pauta, resetar, etc.)
 │   ├── events/           # Listeners de eventos (ready, interactionCreate)
-│   ├── utils/            # Utilitários (agenda, logger, errorHandler)
+│   ├── utils/            # Utilitários (agenda, logger, errorHandler, settings)
 │   └── index.js          # Ponto de entrada do bot
 ├── scripts/
 │   └── deploy-commands.js # Registrar comandos slash
+├── data/
+│   ├── settings.json     # Configurações globais
+│   └── guilds/           # Dados específicos por servidor
 ├── logs/                 # Logs da aplicação (criado na primeira execução)
+├── .github/
+│   └── workflows/        # Configuração do pipeline de CI
 ├── .env.example          # Exemplo de variáveis de ambiente
 ├── .gitignore
 ├── Dockerfile            # Configuração para criar a imagem Docker
@@ -215,6 +256,7 @@ meeting-agenda-discord-bot/
    NOTIFICATION_CHANNEL_ID=canal_para_notificacoes_automaticas
    SUGGESTION_CHANNEL_ID=canal_para_mostrar_novas_sugestoes
    DEBUG=false
+   PORT=8080
    ```
 3. No Discord Developer Portal, habilite os **Intents** necessários (Message Content, Server Members, etc.)
 4. Instale as dependências:
@@ -252,7 +294,7 @@ docker build -t meeting-agenda-bot:latest .
 
 #### Executar container
 ```bash
-docker run --env-file .env meeting-agenda-bot:latest
+docker run -p 8080:8080 --env-file .env meeting-agenda-bot:latest
 ```
 
 ---
@@ -269,8 +311,30 @@ docker run --env-file .env meeting-agenda-bot:latest
 | `/autorizados` | Listar usuários autorizados | Usuários autorizados |
 | `/autorizar` | Autorizar um usuário | Admins/Líderes |
 | `/desautorizar` | Remover autorização | Admins/Líderes |
-| `/resetar` | Resetar a pauta | Admins |
+| `/resetar` | Resetar a pauta ou sugestões | Admins |
 | `/historico limpar` | Limpar histórico de pautas | Admins |
+| `/configreset` | Configurar agendamento de reset | Admins |
+
+---
+
+### 🔄 Reset Automático
+
+O bot pode resetar a pauta automaticamente em um cronograma configurável:
+
+- Cada servidor Discord pode definir seu próprio dia e hora de reset
+- Padrão: Reset ocorre todo domingo às 00:00
+- Use `/configreset configurar` para alterar o agendamento
+- Use `/configreset status` para ver a configuração atual
+
+---
+
+### 🏥 Verificações de Saúde
+
+Para implantações em nuvem, o bot inclui um endpoint de verificação de saúde:
+
+- Servidor HTTP roda na porta 8080 (configurável via variável de ambiente PORT)
+- GET /health retorna 200 OK quando o bot está em execução
+- Adequado para monitoramento de contêineres em plataformas como DigitalOcean
 
 ---
 
