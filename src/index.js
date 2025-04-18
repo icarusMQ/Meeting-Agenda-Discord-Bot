@@ -3,6 +3,7 @@ const { Client, GatewayIntentBits, Collection } = require('discord.js');
 const fs = require('fs');
 const path = require('path');
 const cron = require('node-cron');
+const http = require('http'); // Add HTTP module for health check
 const { resetAgenda } = require('./utils/agenda');
 const logger = require('./utils/logger');
 const { setupGlobalErrorHandlers } = require('./utils/errorHandler');
@@ -148,3 +149,19 @@ client.login(process.env.BOT_TOKEN)
     logger.error('Falha ao conectar ao Discord:', error);
     process.exit(1);
   });
+
+// Health check server for DigitalOcean
+const PORT = process.env.PORT || 8080;
+
+http.createServer((req, res) => {
+  if (req.url === '/health') {
+    res.writeHead(200, { 'Content-Type': 'text/plain' });
+    res.end('OK');
+    logger.debug(`Health check request received and responded with 200 OK`);
+  } else {
+    res.writeHead(404);
+    res.end();
+  }
+}).listen(PORT, () => {
+  logger.info(`Health check server listening on port ${PORT}`);
+});

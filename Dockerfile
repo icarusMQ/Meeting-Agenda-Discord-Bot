@@ -11,7 +11,8 @@ RUN npm install --production
 # Copy the rest of the app
 COPY . .
 
-# Expose no ports (Discord bots don't need incoming ports)
+# Expose port for health check
+EXPOSE 8080
 
 # Start the bot
 CMD ["node", "src/index.js"]
