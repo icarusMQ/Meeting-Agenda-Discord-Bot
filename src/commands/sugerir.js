@@ -6,49 +6,35 @@ const { handleAsync } = require('../utils/errorHandler');
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('sugerir')
-    .setDescription('Sugere um item para a pauta')
+    .setDescription('Sugere um item para a pauta da reunião')
     .addStringOption(option => 
       option.setName('texto')
-            .setDescription('O texto a ser adicionado na pauta')
-            .setRequired(true)
-            .setMaxLength(1000)),
+            .setDescription('O texto do item de pauta')
+            .setRequired(true)),
   
   execute: handleAsync(async (interaction) => {
-    const text = interaction.options.getString('texto');
-    const userId = interaction.user.id;
-    const username = interaction.user.username;
+    const guildId = interaction.guild.id;
+    const texto = interaction.options.getString('texto');
     
-    // Verificar se o texto é muito curto
-    if (text.trim().length < 3) {
-      return interaction.reply({
-        content: '❌ Sua sugestão é muito curta. Por favor, forneça mais detalhes.',
-        ephemeral: true
-      });
-    }
+    // Adicionar à lista de sugestões para esta guild
+    const suggestion = addSuggestion(
+      guildId,
+      texto, 
+      interaction.user.id, 
+      interaction.user.username
+    );
     
-    const suggestion = addSuggestion(text, userId, username);
-    
-    logger.info(`Nova sugestão #${suggestion.id} adicionada por ${username} (${userId})`);
+    logger.info(`Guild ${guildId}: Nova sugestão #${suggestion.id} de ${interaction.user.tag} (${interaction.user.id}): "${texto.substring(0, 50)}${texto.length > 50 ? '...' : ''}"`);
     
     // Responder ao usuário
     await interaction.reply({
-      content: `✅ **Sugestão Registrada**\n\nSua sugestão #${suggestion.id} foi registrada com sucesso!\n📝 **${text}**\n\nUm usuário autorizado precisará aprová-la para ser adicionada à pauta.`,
-      ephemeral: false
+      content: `✅ Sua sugestão foi registrada com o ID #${suggestion.id}!\n\n📝 **${texto}**\n\nUm moderador irá revisar sua sugestão em breve.`,
+      ephemeral: true
     });
     
-    // Enviar uma cópia para o canal de sugestões se configurado
-    const suggestionChannelId = process.env.SUGGESTION_CHANNEL_ID;
-    if (suggestionChannelId) {
-      try {
-        const channel = interaction.client.channels.cache.get(suggestionChannelId);
-        if (channel) {
-          await channel.send({
-            content: `📥 **Nova Sugestão #${suggestion.id}**\n\n${interaction.user.toString()} sugeriu:\n📝 **${text}**\n\nUse \`/aprovar\` para adicionar à pauta.`
-          });
-        }
-      } catch (error) {
-        logger.error(`Erro ao enviar sugestão para o canal de sugestões: ${error.message}`, error);
-      }
-    }
+    // Também notificar no canal (visível para todos)
+    await interaction.channel.send({
+      content: `📋 **Nova Sugestão de Pauta**\n\n${interaction.user.toString()} sugeriu:\n📝 **${texto}**\n\nSugestão #${suggestion.id} aguardando aprovação.`
+    });
   })
 };

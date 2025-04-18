@@ -1,4 +1,4 @@
-const { SlashCommandBuilder, PermissionFlagsBits, ButtonBuilder, ButtonStyle, ActionRowBuilder } = require('discord.js');
+const { SlashCommandBuilder, PermissionFlagsBits, ButtonBuilder, ButtonStyle, ActionRowBuilder, ComponentType } = require('discord.js');
 const { resetAgenda, resetSuggestions } = require('../utils/agenda');
 const logger = require('../utils/logger');
 const { handleAsync } = require('../utils/errorHandler');
@@ -6,98 +6,143 @@ const { handleAsync } = require('../utils/errorHandler');
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('resetar')
-    .setDescription('Resetar a pauta atual e salvar no histórico')
-    .addBooleanOption(option =>
-      option.setName('sugestoes')
-        .setDescription('Resetar também as sugestões pendentes?')
-        .setRequired(false)),
+    .setDescription('Resetar a pauta ou sugestões (requer permissão)')
+    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
+    .addSubcommand(subcommand =>
+      subcommand
+        .setName('pauta')
+        .setDescription('Resetar a pauta atual (move para histórico)'))
+    .addSubcommand(subcommand =>
+      subcommand
+        .setName('sugestoes')
+        .setDescription('Resetar todas as sugestões pendentes')),
   
   execute: handleAsync(async (interaction) => {
-    // Only users with admin permissions can reset the agenda
-    if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
+    const guildId = interaction.guild.id;
+    
+    // Verificar se o usuário tem o papel de líder ou é administrador
+    const isLeader = interaction.member.roles.cache.has(process.env.LEADER_ROLE_ID) || 
+                    interaction.member.permissions.has(PermissionFlagsBits.Administrator);
+    
+    if (!isLeader) {
+      logger.info(`Guild ${guildId}: Usuário sem permissão tentou resetar: ${interaction.user.tag} (${interaction.user.id})`);
       return interaction.reply({
-        content: '❌ Você não tem permissão para resetar a pauta. Apenas administradores podem usar este comando.',
+        content: '❌ Você não tem permissão para resetar a pauta ou sugestões. Apenas líderes e administradores podem usar este comando.',
         ephemeral: true
       });
     }
     
-    const resetSugs = interaction.options.getBoolean('sugestoes');
-    const resetType = resetSugs ? 'completo (pauta e sugestões)' : 'parcial (apenas pauta)';
+    const subcommand = interaction.options.getSubcommand();
     
     // Criar botões de confirmação
     const confirmButton = new ButtonBuilder()
-      .setCustomId('reset_confirm')
+      .setCustomId('confirm_reset')
       .setLabel('Confirmar Reset')
       .setStyle(ButtonStyle.Danger);
-      
+    
     const cancelButton = new ButtonBuilder()
-      .setCustomId('reset_cancel')
+      .setCustomId('cancel_reset')
       .setLabel('Cancelar')
       .setStyle(ButtonStyle.Secondary);
-      
-    const row = new ActionRowBuilder()
-      .addComponents(confirmButton, cancelButton);
     
-    // Enviar mensagem com botões de confirmação
-    const response = await interaction.reply({
-      content: `⚠️ **Confirmação de Reset**\n\nVocê está prestes a realizar um reset ${resetType} da pauta atual.\nEsta ação guardará a pauta atual no histórico e criará uma nova pauta vazia.\n\nVocê tem certeza que deseja continuar?`,
+    const row = new ActionRowBuilder().addComponents(confirmButton, cancelButton);
+    
+    let confirmMessage = '';
+    let successMessage = '';
+    let cancelMessage = '';
+    let successNotificationMessage = '';
+    
+    if (subcommand === 'pauta') {
+      confirmMessage = '⚠️ **Atenção**\n\nVocê está prestes a resetar a pauta atual. Todos os itens serão movidos para o histórico.\n\nDeseja continuar?';
+      successMessage = '✅ A pauta foi resetada com sucesso. Todos os itens foram movidos para o histórico.';
+      cancelMessage = 'Operação cancelada. A pauta não foi alterada.';
+      successNotificationMessage = `📢 **Aviso**: ${interaction.user.toString()} resetou a pauta. Uma nova pauta está disponível!`;
+    } else if (subcommand === 'sugestoes') {
+      confirmMessage = '⚠️ **Atenção**\n\nVocê está prestes a resetar todas as sugestões pendentes. Esta ação não pode ser desfeita.\n\nDeseja continuar?';
+      successMessage = '✅ Todas as sugestões pendentes foram removidas com sucesso.';
+      cancelMessage = 'Operação cancelada. As sugestões não foram alteradas.';
+      successNotificationMessage = `📢 **Aviso**: ${interaction.user.toString()} resetou todas as sugestões pendentes.`;
+    }
+    
+    // Enviar mensagem de confirmação com novo padrão de interação
+    await interaction.reply({
+      content: confirmMessage,
       components: [row],
       ephemeral: true
     });
     
-    // Coletor para resposta dos botões
-    try {
-      const confirmation = await response.awaitMessageComponent({
-        filter: i => i.user.id === interaction.user.id,
-        time: 60000 // 1 minuto para responder
-      });
-      
-      if (confirmation.customId === 'reset_confirm') {
-        // Executar o reset
-        resetAgenda();
-        logger.info(`Pauta resetada manualmente por ${interaction.user.tag} (${interaction.user.id})`);
-        
-        if (resetSugs) {
-          resetSuggestions();
-          logger.info(`Sugestões resetadas manualmente por ${interaction.user.tag} (${interaction.user.id})`);
-          
-          await confirmation.update({
-            content: '✅ A pauta foi resetada com sucesso! Todas as sugestões pendentes também foram removidas.',
-            components: [],
-            ephemeral: true
-          });
-          
-          // Enviar anúncio no canal
-          await interaction.channel.send({
-            content: `📢 **Pauta Resetada**\n\n${interaction.user.toString()} realizou um reset completo da pauta. Uma nova pauta está disponível para sugestões!`
-          });
-        } else {
-          await confirmation.update({
-            content: '✅ A pauta foi resetada com sucesso! Sugestões pendentes foram mantidas.',
-            components: [],
-            ephemeral: true
-          });
-          
-          // Enviar anúncio no canal
-          await interaction.channel.send({
-            content: `📢 **Pauta Resetada**\n\n${interaction.user.toString()} realizou um reset da pauta. Uma nova pauta está disponível, mantendo as sugestões pendentes!`
-          });
-        }
-      } else {
-        // Cancelado
-        await confirmation.update({
-          content: '❌ Operação de reset cancelada.',
-          components: [],
+    // Coletor para os botões usando o novo padrão
+    const filter = i => {
+      if (i.user.id !== interaction.user.id) {
+        i.reply({
+          content: '❌ Estes botões não são para você.',
           ephemeral: true
         });
+        return false;
+      }
+      return true;
+    };
+    
+    try {
+      // Aguardar interação do usuário
+      const buttonInteraction = await interaction.channel.awaitMessageComponent({ 
+        filter, 
+        componentType: ComponentType.Button, 
+        time: 30000 // 30 segundos para responder
+      });
+      
+      // Atualizar mensagem sem botões
+      await buttonInteraction.update({
+        components: []
+      });
+      
+      if (buttonInteraction.customId === 'cancel_reset') {
+        await buttonInteraction.editReply({
+          content: cancelMessage
+        });
+        return;
+      }
+      
+      if (buttonInteraction.customId === 'confirm_reset') {
+        let success = false;
+        
+        if (subcommand === 'pauta') {
+          success = resetAgenda(guildId);
+          logger.info(`Guild ${guildId}: Pauta resetada por ${interaction.user.tag} (${interaction.user.id})`);
+        } else if (subcommand === 'sugestoes') {
+          success = resetSuggestions(guildId);
+          logger.info(`Guild ${guildId}: Sugestões resetadas por ${interaction.user.tag} (${interaction.user.id})`);
+        }
+        
+        if (success) {
+          await buttonInteraction.editReply({
+            content: successMessage
+          });
+          
+          // Notificar no canal
+          await interaction.channel.send({
+            content: successNotificationMessage
+          });
+        } else {
+          await buttonInteraction.editReply({
+            content: '❌ Ocorreu um erro ao executar o reset.'
+          });
+        }
       }
     } catch (error) {
-      // Tempo expirado
-      await interaction.editReply({
-        content: '⏱️ O tempo para confirmação expirou. A operação de reset foi cancelada.',
-        components: [],
-        ephemeral: true
-      });
+      // Timeout ou erro
+      if (error.code === 'InteractionCollectorError') {
+        await interaction.editReply({
+          content: '⏱️ Tempo esgotado. Nenhuma alteração foi realizada.',
+          components: []
+        });
+      } else {
+        logger.error(`Erro ao processar interação: ${error.message}`, error);
+        await interaction.editReply({
+          content: '❌ Ocorreu um erro ao processar sua solicitação.',
+          components: []
+        });
+      }
     }
   })
 };

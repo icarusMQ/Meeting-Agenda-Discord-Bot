@@ -10,22 +10,24 @@ module.exports = {
     .setDefaultMemberPermissions('0'), // Default to no one can use, we'll override with roles
   
   execute: handleAsync(async (interaction) => {
+    const guildId = interaction.guild.id;
+    
     // Check if the user has the leader role, is an administrator, or is in the authorized users list
     const isLeader = interaction.member.roles.cache.has(process.env.LEADER_ROLE_ID) || 
                     interaction.member.permissions.has(PermissionFlagsBits.Administrator);
     const hasAuthorizedRole = interaction.member.roles.cache.has(process.env.AUTHORIZED_ROLE_ID);
-    const isAuthorized = isLeader || hasAuthorizedRole || isUserAuthorized(interaction.user.id);
+    const isAuthorized = isLeader || hasAuthorizedRole || isUserAuthorized(guildId, interaction.user.id);
     
     if (!isAuthorized) {
-      logger.info(`Usuário sem permissão tentou aprovar sugestões: ${interaction.user.tag} (${interaction.user.id})`);
+      logger.info(`Guild ${guildId}: Usuário sem permissão tentou aprovar sugestões: ${interaction.user.tag} (${interaction.user.id})`);
       return interaction.reply({
         content: '❌ Você não tem permissão para aprovar sugestões.',
         ephemeral: true
       });
     }
     
-    // Get all pending suggestions
-    const suggestions = getSuggestions();
+    // Get all pending suggestions for this guild
+    const suggestions = getSuggestions(guildId);
     
     if (suggestions.length === 0) {
       return interaction.reply({
@@ -50,63 +52,74 @@ module.exports = {
     const row = new ActionRowBuilder().addComponents(selectMenu);
     
     // Send the message with the select menu
-    const response = await interaction.reply({
+    await interaction.reply({
       content: '📋 **Aprovar Sugestão**\n\nSelecione uma sugestão da lista abaixo para aprová-la e adicioná-la à pauta:',
       components: [row],
       ephemeral: true
     });
     
-    logger.info(`Menu de aprovação de sugestões aberto por ${interaction.user.tag} (${interaction.user.id})`);
+    logger.info(`Guild ${guildId}: Menu de aprovação de sugestões aberto por ${interaction.user.tag} (${interaction.user.id})`);
     
-    // Create a collector for the menu interaction
-    const collector = response.createMessageComponentCollector({ 
-      componentType: ComponentType.StringSelect,
-      time: 60000 // 1 minute timeout
-    });
-    
-    collector.on('collect', async i => {
+    // Criar filtro para interações
+    const filter = i => {
       if (i.user.id !== interaction.user.id) {
-        return i.reply({
+        i.reply({
           content: '❌ Este menu não é para você.',
           ephemeral: true
         });
+        return false;
       }
+      return true;
+    };
+    
+    try {
+      // Aguardar interação do usuário
+      const selectInteraction = await interaction.channel.awaitMessageComponent({
+        filter,
+        componentType: ComponentType.StringSelect,
+        time: 60000 // 1 minuto para selecionar
+      });
       
-      const selectedId = parseInt(i.values[0], 10);
-      const approved = approveSuggestion(selectedId);
+      const selectedId = parseInt(selectInteraction.values[0], 10);
+      const approved = approveSuggestion(guildId, selectedId);
       
       if (approved) {
-        logger.info(`Sugestão #${selectedId} aprovada por ${interaction.user.tag} (${interaction.user.id})`);
+        logger.info(`Guild ${guildId}: Sugestão #${selectedId} aprovada por ${interaction.user.tag} (${interaction.user.id})`);
         
-        await i.update({
-          content: `✅ **Sugestão Aprovada**\n\nVocê aprovou com sucesso a sugestão #${selectedId} e ela foi adicionada à pauta!\n\n📝 **${approved.text}**\n\nSugerida por: ${approved.username}`,
+        await selectInteraction.update({
+          content: `✅ **Sugestão Aprovada**\n\nVocê aprovou com sucesso a sugestão #${selectedId} e ela foi adicionada à pauta!\n\n📝 **${approved.text}**\n\nSugerida por: ${approved.suggestedBy}`,
           components: [],
           ephemeral: true
         });
         
         // Also send a message to the channel to notify everyone
         await interaction.channel.send({
-          content: `✅ **Novo Item na Pauta**\n\n${interaction.user.toString()} aprovou a sugestão: \n📝 **${approved.text}**\n\nSugerida por: ${approved.username}`
+          content: `✅ **Novo Item na Pauta**\n\n${interaction.user.toString()} aprovou a sugestão: \n📝 **${approved.text}**\n\nSugerida por: ${approved.suggestedBy}`
         });
       } else {
-        logger.warn(`Falha ao aprovar sugestão #${selectedId} por ${interaction.user.tag} (${interaction.user.id})`);
+        logger.warn(`Guild ${guildId}: Falha ao aprovar sugestão #${selectedId} por ${interaction.user.tag} (${interaction.user.id})`);
         
-        await i.update({
+        await selectInteraction.update({
           content: `❌ Erro ao aprovar sugestão #${selectedId}. É possível que ela já tenha sido aprovada ou removida.`,
           components: [],
           ephemeral: true
         });
       }
-    });
-    
-    collector.on('end', collected => {
-      if (collected.size === 0) {
-        interaction.editReply({
+    } catch (error) {
+      // Timeout ou erro
+      if (error.code === 'InteractionCollectorError') {
+        await interaction.editReply({
           content: '⏱️ Tempo esgotado. Nenhuma sugestão foi aprovada.',
           components: [],
           ephemeral: true
         });
+      } else {
+        logger.error(`Erro ao processar interação: ${error.message}`, error);
+        await interaction.editReply({
+          content: '❌ Ocorreu um erro ao processar sua solicitação.',
+          components: []
+        });
       }
-    });
+    }
   })
 };
